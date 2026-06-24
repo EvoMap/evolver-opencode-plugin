@@ -17,6 +17,11 @@ const path = require('node:path');
 const DEFAULT_HOOKS_DIR = path.join(__dirname, 'hooks');
 const WRITE_TOOLS = new Set(['write', 'edit', 'multiedit', 'multi_edit']);
 
+function timeoutMs(envName, fallback) {
+  const raw = Number.parseInt(process.env[envName] || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 function resolveHooksDir() {
   const override = process.env.EVOLVER_OPENCODE_HOOKS_DIR;
   return override && path.isAbsolute(override) ? override : DEFAULT_HOOKS_DIR;
@@ -103,7 +108,7 @@ async function Evolver(ctx = {}) {
         runHook(
           'session-start.js',
           { session_id: sessionIdFromEvent(event), source: 'opencode' },
-          3000,
+          timeoutMs('EVOLVER_OPENCODE_SESSION_START_TIMEOUT_MS', 3000),
           ctx
         );
         return;
@@ -112,7 +117,7 @@ async function Evolver(ctx = {}) {
         runHook(
           'session-end.js',
           { session_id: sessionIdFromEvent(event), source: 'opencode' },
-          8000,
+          timeoutMs('EVOLVER_OPENCODE_SESSION_END_TIMEOUT_MS', 8000),
           ctx
         );
       }
@@ -127,7 +132,7 @@ async function Evolver(ctx = {}) {
           tool_input: toolArgs(input, output),
           tool_response: toolResult(output),
         },
-        2000,
+        timeoutMs('EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS', 2000),
         ctx
       );
     },
@@ -140,6 +145,7 @@ module.exports._private = {
   resolveHooksDir,
   resolveWorkingDir,
   runHook,
+  timeoutMs,
   normalizeToolName,
   toolArgs,
   toolResult,

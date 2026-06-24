@@ -23,16 +23,11 @@ function writeHookScripts(dir) {
   const recorder = `
 const fs = require('node:fs');
 const path = process.env.RECORD_FILE;
-let raw = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { raw += chunk; });
-process.stdin.on('end', () => {
-  const payload = JSON.parse(raw || '{}');
-  const row = { script: require('node:path').basename(__filename), payload, cwd: process.cwd(), envProject: process.env.OPENCODE_PROJECT_DIR };
-  fs.appendFileSync(path, JSON.stringify(row) + '\\n');
-  process.stdout.write('{}');
-});
-process.stdin.resume();
+const raw = fs.readFileSync(0, 'utf8');
+const payload = JSON.parse(raw || '{}');
+const row = { script: require('node:path').basename(__filename), payload, cwd: process.cwd(), envProject: process.env.OPENCODE_PROJECT_DIR };
+fs.appendFileSync(path, JSON.stringify(row) + '\\n');
+process.stdout.write('{}');
 `;
   for (const name of ['session-start.js', 'session-end.js', 'signal-detect.js']) {
     fs.writeFileSync(path.join(dir, name), recorder, 'utf8');
@@ -67,9 +62,11 @@ describe('OpenCode event wiring', () => {
 
     const oldHooksDir = process.env.EVOLVER_OPENCODE_HOOKS_DIR;
     const oldRecord = process.env.RECORD_FILE;
+    const oldSignalTimeout = process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS;
     try {
       process.env.EVOLVER_OPENCODE_HOOKS_DIR = hooksDir;
       process.env.RECORD_FILE = recordFile;
+      process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS = '15000';
       const hooks = await plugin.Evolver({ directory: projectDir });
 
       await hooks.event({
@@ -108,6 +105,8 @@ describe('OpenCode event wiring', () => {
       else process.env.EVOLVER_OPENCODE_HOOKS_DIR = oldHooksDir;
       if (oldRecord === undefined) delete process.env.RECORD_FILE;
       else process.env.RECORD_FILE = oldRecord;
+      if (oldSignalTimeout === undefined) delete process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS;
+      else process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS = oldSignalTimeout;
       cleanup(dir);
     }
   });

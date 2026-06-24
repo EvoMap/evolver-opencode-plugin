@@ -8,15 +8,16 @@
     ".": "./server.js",
     "./server": {
       "require": "./server.js",
-      "import": "./server.js",
+      "import": "./server.mjs",
       "config": {}
     }
   },
   "bin": {
-    "evomap-opencode-plugin": "./scripts/install.js"
+    "evomap-opencode-plugin": "scripts/install.js"
   },
   "files": [
     "server.js",
+    "server.mjs",
     "hooks/",
     "mcp/",
     "skills/",
