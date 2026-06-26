@@ -69,6 +69,59 @@ describe('local-file installer', () => {
     }
   });
 
+  it('removes the whole managed AGENTS.md section before reinstalling', () => {
+    const dir = tmpDir();
+    try {
+      installer.install({ configRoot: dir, force: false });
+      const p = installer.paths(dir);
+      installer.uninstall({ configRoot: dir });
+
+      const afterUninstall = fs.readFileSync(p.agentsMdPath, 'utf8');
+      assert.ok(!afterUninstall.includes(installer.EVOLVER_MARKER));
+      assert.ok(!afterUninstall.includes('## Evolution Memory (Evolver)'));
+
+      installer.install({ configRoot: dir, force: false });
+      installer.uninstall({ configRoot: dir });
+      const afterSecondUninstall = fs.readFileSync(p.agentsMdPath, 'utf8');
+      assert.ok(!afterSecondUninstall.includes('## Evolution Memory (Evolver)'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('removes legacy marker-only AGENTS.md sections', () => {
+    const dir = tmpDir();
+    try {
+      const p = installer.paths(dir);
+      fs.writeFileSync(
+        p.agentsMdPath,
+        [
+          '# Project',
+          '',
+          installer.EVOLVER_MARKER,
+          '## Evolution Memory (Evolver)',
+          '',
+          'legacy body',
+          '',
+          '## Keep Me',
+          '',
+          'real section',
+          '',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const report = installer.uninstall({ configRoot: dir });
+      assert.equal(report.ok, true);
+      const content = fs.readFileSync(p.agentsMdPath, 'utf8');
+      assert.ok(!content.includes(installer.EVOLVER_MARKER));
+      assert.ok(!content.includes('legacy body'));
+      assert.ok(content.includes('## Keep Me'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
   it('reports verify failure before install', () => {
     const dir = tmpDir();
     try {

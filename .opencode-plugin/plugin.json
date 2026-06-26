@@ -2,7 +2,7 @@
   "name": "evomap-opencode-plugin",
   "displayName": "Evolver for OpenCode",
   "description": "Official EvoMap Evolver server plugin for OpenCode: persistent, auditable agent evolution memory powered by GEP.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "EvoMap",
     "email": "team@evomap.ai"

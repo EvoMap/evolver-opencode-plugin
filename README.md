@@ -7,19 +7,20 @@
 Give OpenCode a persistent, auditable evolution memory powered by
 [EvoMap](https://evomap.ai) and the Genome Evolution Protocol (GEP).
 
-The plugin recalls what worked in recent sessions, detects improvement signals
-while OpenCode edits files, and records outcomes when a session becomes idle. It
-uses the same memory format as the Evolver Claude Code and Cursor plugins, so
-successful patterns can be reused across agent hosts without sharing unrelated
-project state.
+The plugin recalls what worked in recent sessions during OpenCode compaction,
+detects improvement signals while OpenCode edits files, and records outcomes
+when a session is deleted. It uses the same memory format as the Evolver Claude
+Code and Cursor plugins, so successful patterns can be reused across agent
+hosts without sharing unrelated project state.
 
 ## What it does
 
 | OpenCode event | Evolver hook | Effect |
 |---|---|---|
-| `session.created` | `hooks/session-start.js` | Surfaces recent successful outcomes for this workspace. |
+| `session.created` | `hooks/session-start.js` | Prepares recent successful outcomes for this workspace. |
+| `experimental.session.compacting` | `hooks/session-start.js` | Adds Evolver memory to OpenCode's compaction context. |
 | `tool.execute.after` (`write`/`edit`) | `hooks/signal-detect.js` | Detects evolution signals in edited content. |
-| `session.idle` | `hooks/session-end.js` | Records a git-diff-based outcome to local memory. |
+| `session.deleted` | `hooks/session-end.js` | Records one current-diff outcome to local memory. |
 
 Memory is workspace-scoped via `<repo>/.evolver/workspace-id`, so one project's
 outcomes do not leak into another project.

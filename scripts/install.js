@@ -11,6 +11,7 @@ const path = require('node:path');
 const PLUGIN_FILE_NAME = 'evolver.js';
 const PLUGIN_HEADER = '// _evolver_managed: true (do not remove this line)';
 const EVOLVER_MARKER = '<!-- evolver-opencode-evolution-memory -->';
+const EVOLVER_END_MARKER = '<!-- /evolver-opencode-evolution-memory -->';
 const HOOK_SCRIPTS = ['session-start.js', 'signal-detect.js', 'session-end.js'];
 
 function usage() {
@@ -78,16 +79,27 @@ function isManaged(filePath) {
   }
 }
 
+function atomicWrite(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.tmp`
+  );
+  fs.writeFileSync(tmp, content, 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
 function appendAgentsSection(filePath) {
   const section = `${EVOLVER_MARKER}
 ## Evolution Memory (Evolver)
 
 This project uses Evolver for self-evolution. OpenCode plugin hooks automatically:
-1. Inject recent evolution memory at session start
+1. Prepare recent evolution memory for OpenCode context compaction
 2. Detect evolution signals during file edits
-3. Record outcomes when the session becomes idle
+3. Record outcomes when the OpenCode session is deleted
 
-For substantive tasks, use successful prior approaches when the plugin surfaces them, and avoid repeating failed patterns.`;
+For substantive tasks, use successful prior approaches when the plugin surfaces them, and avoid repeating failed patterns.
+${EVOLVER_END_MARKER}`;
 
   let existing = '';
   try {
@@ -96,8 +108,12 @@ For substantive tasks, use successful prior approaches when the plugin surfaces 
     // new file
   }
   if (existing.includes(EVOLVER_MARKER)) return false;
-  const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n\n' : '\n';
-  fs.writeFileSync(filePath, existing + separator + section + '\n', 'utf8');
+  const separator = existing.length === 0
+    ? ''
+    : existing.endsWith('\n')
+      ? '\n'
+      : '\n\n';
+  atomicWrite(filePath, existing + separator + section + '\n');
   return true;
 }
 
@@ -106,10 +122,23 @@ function removeAgentsSection(filePath) {
     let content = fs.readFileSync(filePath, 'utf8');
     if (!content.includes(EVOLVER_MARKER)) return false;
     const idx = content.indexOf(EVOLVER_MARKER);
-    const nextSection = content.indexOf('\n## ', idx + EVOLVER_MARKER.length);
-    const endIdx = nextSection === -1 ? content.length : nextSection;
-    content = content.slice(0, idx).trimEnd() + (nextSection === -1 ? '' : content.slice(endIdx));
-    fs.writeFileSync(filePath, content.trimEnd() + '\n', 'utf8');
+    const endMarker = content.indexOf(EVOLVER_END_MARKER, idx);
+    let endIdx;
+    if (endMarker !== -1) {
+      const afterEndMarker = endMarker + EVOLVER_END_MARKER.length;
+      const lineBreak = content.indexOf('\n', afterEndMarker);
+      endIdx = lineBreak === -1 ? content.length : lineBreak + 1;
+    } else {
+      // Legacy installs had no end marker. Skip the managed heading itself,
+      // then remove until the following markdown section or EOF.
+      const ownHeading = content.indexOf('\n## ', idx);
+      const nextSection = ownHeading === -1
+        ? -1
+        : content.indexOf('\n## ', ownHeading + 1);
+      endIdx = nextSection === -1 ? content.length : nextSection;
+    }
+    content = content.slice(0, idx).trimEnd() + content.slice(endIdx);
+    atomicWrite(filePath, `${content.trimEnd()}\n`);
     return true;
   } catch (_err) {
     return false;
@@ -125,9 +154,7 @@ function install({ configRoot, force }) {
     };
   }
   fs.mkdirSync(p.pluginsDir, { recursive: true });
-  const tmp = p.pluginPath + '.tmp';
-  fs.writeFileSync(tmp, pluginSource(), 'utf8');
-  fs.renameSync(tmp, p.pluginPath);
+  atomicWrite(p.pluginPath, pluginSource());
   appendAgentsSection(p.agentsMdPath);
   return {
     ok: true,
@@ -277,4 +304,5 @@ module.exports = {
   paths,
   packageRoot,
   EVOLVER_MARKER,
+  EVOLVER_END_MARKER,
 };

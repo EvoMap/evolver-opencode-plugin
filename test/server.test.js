@@ -25,9 +25,14 @@ const fs = require('node:fs');
 const path = process.env.RECORD_FILE;
 const raw = fs.readFileSync(0, 'utf8');
 const payload = JSON.parse(raw || '{}');
-const row = { script: require('node:path').basename(__filename), payload, cwd: process.cwd(), envProject: process.env.OPENCODE_PROJECT_DIR };
+const script = require('node:path').basename(__filename);
+const row = { script, payload, cwd: process.cwd(), envProject: process.env.OPENCODE_PROJECT_DIR };
 fs.appendFileSync(path, JSON.stringify(row) + '\\n');
-process.stdout.write('{}');
+if (script === 'session-start.js') {
+  process.stdout.write(JSON.stringify({ additionalContext: 'memory for ' + payload.session_id }));
+} else {
+  process.stdout.write('{}');
+}
 `;
   for (const name of ['session-start.js', 'session-end.js', 'signal-detect.js']) {
     fs.writeFileSync(path.join(dir, name), recorder, 'utf8');
@@ -52,7 +57,7 @@ describe('OpenCode server plugin exports', () => {
 });
 
 describe('OpenCode event wiring', () => {
-  it('maps session.created, write/edit tools, and session.idle to hook scripts', async () => {
+  it('maps session.created, write/edit tools, and session.deleted to hook scripts', async () => {
     const dir = tmpDir();
     const hooksDir = path.join(dir, 'hooks');
     const recordFile = path.join(dir, 'records.jsonl');
@@ -85,7 +90,7 @@ describe('OpenCode event wiring', () => {
       );
       await hooks.event({
         event: {
-          type: 'session.idle',
+          type: 'session.deleted',
           properties: { sessionID: 's1' },
         },
       });
@@ -107,6 +112,42 @@ describe('OpenCode event wiring', () => {
       else process.env.RECORD_FILE = oldRecord;
       if (oldSignalTimeout === undefined) delete process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS;
       else process.env.EVOLVER_OPENCODE_SIGNAL_TIMEOUT_MS = oldSignalTimeout;
+      cleanup(dir);
+    }
+  });
+
+  it('injects recalled memory into OpenCode compaction context', async () => {
+    const dir = tmpDir();
+    const hooksDir = path.join(dir, 'hooks');
+    const recordFile = path.join(dir, 'records.jsonl');
+    const projectDir = path.join(dir, 'project');
+    fs.mkdirSync(projectDir);
+    writeHookScripts(hooksDir);
+
+    const oldHooksDir = process.env.EVOLVER_OPENCODE_HOOKS_DIR;
+    const oldRecord = process.env.RECORD_FILE;
+    try {
+      process.env.EVOLVER_OPENCODE_HOOKS_DIR = hooksDir;
+      process.env.RECORD_FILE = recordFile;
+      const hooks = await plugin.Evolver({ directory: projectDir });
+      const output = { context: [] };
+
+      await hooks.event({
+        event: {
+          type: 'session.created',
+          properties: { info: { id: 's2' } },
+        },
+      });
+      await hooks['experimental.session.compacting']({ session_id: 's2' }, output);
+
+      assert.equal(output.context.length, 1);
+      assert.match(output.context[0], /Evolver Memory/);
+      assert.match(output.context[0], /memory for s2/);
+    } finally {
+      if (oldHooksDir === undefined) delete process.env.EVOLVER_OPENCODE_HOOKS_DIR;
+      else process.env.EVOLVER_OPENCODE_HOOKS_DIR = oldHooksDir;
+      if (oldRecord === undefined) delete process.env.RECORD_FILE;
+      else process.env.RECORD_FILE = oldRecord;
       cleanup(dir);
     }
   });
