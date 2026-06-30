@@ -1,5 +1,5 @@
 {
-  "name": "evomap-opencode-plugin",
+  "name": "evolver-opencode-plugin",
   "version": "0.1.1",
   "description": "Official EvoMap Evolver plugin for OpenCode: persistent, auditable agent evolution memory powered by GEP.",
   "type": "commonjs",
@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "evomap-opencode-plugin": "scripts/install.js"
+    "evolver-opencode-plugin": "scripts/install.js"
   },
   "files": [
     "server.js",
@@ -53,10 +53,10 @@
   "homepage": "https://evomap.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/EvoMap/evomap-opencode-plugin.git"
+    "url": "git+https://github.com/EvoMap/evolver-opencode-plugin.git"
   },
   "bugs": {
-    "url": "https://github.com/EvoMap/evomap-opencode-plugin/issues"
+    "url": "https://github.com/EvoMap/evolver-opencode-plugin/issues"
   },
   "license": "MIT",
   "engines": {

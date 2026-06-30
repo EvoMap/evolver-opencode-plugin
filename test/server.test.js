@@ -7,7 +7,7 @@ const path = require('node:path');
 const plugin = require('../server');
 
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'evomap-opencode-plugin-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'evolver-opencode-plugin-'));
 }
 
 function cleanup(dir) {

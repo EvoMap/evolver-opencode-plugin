@@ -34,7 +34,7 @@ Add the package to your OpenCode config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["evomap-opencode-plugin"]
+  "plugin": ["evolver-opencode-plugin"]
 }
 ```
 
@@ -46,8 +46,8 @@ startup and loads the server plugin from this package's `./server` entrypoint.
 For local development or manual installation:
 
 ```bash
-npx evomap-opencode-plugin --install --config-root /path/to/project --force
-npx evomap-opencode-plugin --verify --config-root /path/to/project
+npx evolver-opencode-plugin --install --config-root /path/to/project --force
+npx evolver-opencode-plugin --verify --config-root /path/to/project
 ```
 
 This writes a small managed delegate file to
@@ -89,7 +89,7 @@ npm run pack:dry
 For a local-file install:
 
 ```bash
-npx evomap-opencode-plugin --verify --config-root /path/to/project
+npx evolver-opencode-plugin --verify --config-root /path/to/project
 ```
 
 OpenCode's TUI plugin list is for TUI plugins. Evolver is a server/event plugin,
