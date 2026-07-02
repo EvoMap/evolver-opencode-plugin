@@ -84,6 +84,19 @@ EvoMap Proxy mailbox:
 - `evolver_status` — Proxy state (node id, pending counts, last sync).
 - `evolver_fetch_asset` / `evolver_publish_asset` / `evolver_distill_conversation` / `evolver_poll`.
 
+When you report `evolver_status` to the user, translate it into plain "are you
+connected?" language — **don't** dump raw JSON or internal terms like
+`node_secret`, `stake`, or `hub_rotate`:
+
+- If `~/.evomap/claim_url` exists, the node is registered but **not yet
+  claimed**. Tell the user to sign in to evomap.ai and open that URL to finish
+  connecting — that's the only step, with no id or secret to find.
+- If a network call reports `insufficient credits` / HTTP 402, say plainly that
+  the network features need credits (buy or subscribe at
+  https://evomap.ai/pricing); local evolution memory keeps working as usual.
+- If the Proxy is simply down, note it starts when you run `evolver` once in a
+  git repo, and that the local memory hooks keep working regardless.
+
 Use `evolver_distill_conversation` only when the current conversation produced a concrete reusable capability. Include a summary, strategy steps, artifact paths/links, and validation evidence so the Proxy can reject weak or noisy candidates.
 
 The tools degrade gracefully when the Proxy isn't running (the local memory hooks

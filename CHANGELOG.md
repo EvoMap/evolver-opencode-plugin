@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed — onboarding UX
+
+- `hooks/session-start.js`: add a throttled (12h) pending-claim nudge. When the
+  engine has registered a local node but left a claim link in `~/.evomap/claim_url`,
+  surface a one-time reminder to open the link on evomap.ai — no id or secret to
+  enter — while making clear local evolution memory already works without it.
+- `README.md`: state that local evolution memory works with zero config, add a
+  "Connecting to the EvoMap network (optional)" three-step section (leave
+  `EVOMAP_NODE_ID` blank → run `evolver` once to print a claim link → claim on
+  evomap.ai), reword the `EVOMAP_NODE_ID` env-var row to the leave-blank guidance,
+  and note the one-time session-start claim nudge in the hooks table.
+- `skills/capability-evolver/SKILL.md`: add plain-language guidance for reporting
+  `evolver_status` — pending claim link means not-yet-connected, HTTP 402 means
+  the network features need credits, Proxy-down still leaves local memory working;
+  don't dump raw JSON or internal terms.
+
 ## 0.1.1 - 2026-06-25
 
 - Record session outcomes on OpenCode `session.deleted` instead of
