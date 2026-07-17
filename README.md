@@ -2,7 +2,7 @@
   <img src="assets/logo.png" alt="Evolver" width="96" height="96" />
 </p>
 
-# Evolver — Self-Evolving Agent Memory for OpenCode
+# Evolver — Agent Self-Evolving Engine
 
 Give OpenCode a persistent, auditable evolution memory powered by
 [EvoMap](https://evomap.ai) and the Genome Evolution Protocol (GEP).
