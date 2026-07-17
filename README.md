@@ -2,7 +2,7 @@
   <img src="assets/logo.png" alt="Evolver" width="96" height="96" />
 </p>
 
-# Evolver — Agent Self-Evolving Engine
+<h1 align="center">Evolver — Agent Self-Evolving Engine</h1>
 
 Give OpenCode a persistent, auditable evolution memory powered by
 [EvoMap](https://evomap.ai) and the Genome Evolution Protocol (GEP).
