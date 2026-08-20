@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- MCP bridge is Recipe-first: `evolver_recipe_search` then `evolver_recipe_express`
+  against Proxy `/recipe/search` and `/recipe/express`. `evolver_search_assets`
+  remains as Gene/Capsule fallback when no Recipe hits.
+
 ### Changed — onboarding UX
 
 - `hooks/session-start.js`: add a throttled (12h) pending-claim nudge. When the
