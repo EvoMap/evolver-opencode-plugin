@@ -64,6 +64,19 @@ test('a verified turn is distilled once its session is deleted, in a tool-less h
   assert.deepEqual(body.distill_usage, { input: 900, output: 120 });
 });
 
+test('a verified turn that reused an injected strategy is distilled too', async (t) => {
+  const { oc, proxy } = await harness(t, { assets: [ASSET] });
+  await oc.prompt('ses_reused', 'add a retry to the uploader');
+  await oc.bash('ses_reused', 'npm test', { exit: 0, output: 'ℹ pass 4' });
+  await oc.answer('ses_reused', 'Added a retry with backoff.');
+  await oc.idle('ses_reused');
+  await until(() => reportsOf(proxy).length === 1, 'the reuse report');
+
+  await deleted(oc, 'ses_reused');
+  await until(() => distills(proxy).length === 1, 'the distillation');
+  assert.equal(distills(proxy)[0].body.user_prompt, 'add a retry to the uploader');
+});
+
 test('the helper session triggers none of this plugin\'s own work', async (t) => {
   const { oc, proxy, client, hooks } = await harness(t, { assets: [ASSET], proxyAnswers: retryOnly });
   await verifiedTurn(oc, 'ses_h');
@@ -127,7 +140,7 @@ test('a strategy whose turn never ended is reported aborted when its session is 
   assert.equal(report.outcome, 'failed');
   assert.deepEqual(
     { tier: report.evidence.tier, applied: report.evidence.applied, aborted: report.evidence.aborted, stage: report.evidence.stage },
-    { tier: 'none', applied: 'partial', aborted: true, stage: 'immediate' },
+    { tier: 'none', applied: 'used', aborted: true, stage: 'immediate' },
   );
 });
 

@@ -3,7 +3,6 @@
 
 import { fileURLToPath } from 'node:url';
 
-import { appliedVerdictOf } from './applied.js';
 import { evolveCommand, evolvePromptOf } from './commands.js';
 import { configOf } from './config.js';
 import { createRecallLog, createReportLog, recallSettingsOf } from './diagnostics.js';
@@ -31,7 +30,6 @@ import { createOpenTurns } from './turn-state.js';
 
 const SKILLS_DIR = fileURLToPath(new URL('../assets/skills/', import.meta.url));
 const NOTICE_MS = 15_000;
-const EMPTY_RECORD = { checks: [], commands: [], paths: [], edits: [], answer: '' };
 
 function reportsOf(assets, { sessionId, turn, reasonKind, record }) {
   return assets.map((asset) => immediateReportOf({
@@ -40,13 +38,12 @@ function reportsOf(assets, { sessionId, turn, reasonKind, record }) {
     turn: turn ?? asset.turn,
     reasonKind,
     checks: record.checks,
-    applied: appliedVerdictOf({ strategyText: asset.strategyText, ...record }).verdict,
   }));
 }
 
 function abortedReports(assets) {
   return assets.map((asset) => ({
-    report: reportsOf([asset], { sessionId: asset.sessionId, reasonKind: 'aborted', record: EMPTY_RECORD })[0],
+    report: reportsOf([asset], { sessionId: asset.sessionId, reasonKind: 'aborted', record: { checks: [] } })[0],
     sessionId: asset.sessionId,
   }));
 }
@@ -154,8 +151,7 @@ async function EvolverServer(input, options) {
     labelable.set(sessionId, reuses);
     deliver(reports.map((report) => ({ report, sessionId }))).catch(() => {});
     rememberForRetention({ sessionId, projectDir, reuses, editedBefore: finished.editedBefore });
-    const reusedAsset = reuses.some((reuse) => reuse.applied === 'used');
-    if (skipReason(reasonKind, finished, { reusedAsset })) return;
+    if (skipReason(reasonKind, finished)) return;
     rememberCandidate(sessionId, candidateOf({ prompt: prompts.get(sessionId), record: finished, model: modelOf(lastAssistant), turn }));
   };
 

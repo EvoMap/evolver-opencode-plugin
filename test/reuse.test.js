@@ -37,14 +37,14 @@ function ledgers({ hub = { ok: true, data: {} }, local = true } = {}) {
   };
 }
 
-const immediate = (overrides = {}) => immediateReportOf({ asset: ASSET, sessionId: 's1', turn: 4, reasonKind: 'completed', checks: [], applied: 'used', ...overrides });
+const immediate = (overrides = {}) => immediateReportOf({ asset: ASSET, sessionId: 's1', turn: 4, reasonKind: 'completed', checks: [], ...overrides });
 
-test('a turn that ran no check still reports its injection, as tier none', () => {
+test('a turn that ran no check still reports its injection as used, at tier none', () => {
   assert.deepEqual(immediate(), {
     asset_id: 'sha256:a',
     outcome: 'success',
     task_id: 'opencode:s1:4',
-    reason: 'Injected by Evolver into OpenCode turn 4; applied: used; no check ran.',
+    reason: 'Injected by Evolver into OpenCode turn 4; no check ran.',
     evidence: { tier: 'none', applied: 'used', aborted: false, stage: 'immediate' },
   });
   assert.equal(immediate({ reasonKind: 'error' }).outcome, 'failed');
@@ -56,10 +56,10 @@ test('a check the turn ran makes the report L1 and decides its outcome', () => {
   assert.deepEqual(passed.evidence.check, { kind: 'test', passed: true, fail_then_pass: false });
   assert.equal(passed.evidence.tier, 'L1');
 
-  const failed = immediate({ checks: [{ command: 'npx tsc -p .', failed: true }], applied: 'partial' });
+  const failed = immediate({ checks: [{ command: 'npx tsc -p .', failed: true }] });
   assert.equal(failed.outcome, 'failed');
   assert.deepEqual(failed.evidence.check, { kind: 'typecheck', passed: false, fail_then_pass: false });
-  assert.equal(failed.evidence.applied, 'partial');
+  assert.equal(failed.evidence.applied, 'used');
 });
 
 test('the same check failing and then passing is recorded as such', () => {
@@ -95,11 +95,11 @@ test('a correction or approval follow-up is L3 under the turn task id plus :corr
 });
 
 test('kept or reverted edits are an L2 follow-up under :retention; anything else sends nothing', () => {
-  const reuse = reportedReuseOf(immediate({ applied: 'partial' }));
+  const reuse = reportedReuseOf(immediate());
   const kept = retentionReportOf(reuse, 'kept');
   assert.equal(kept.task_id, 'opencode:s1:4:retention');
   assert.equal(kept.outcome, 'success');
-  assert.deepEqual(kept.evidence, { tier: 'L2', applied: 'partial', stage: 'retention' });
+  assert.deepEqual(kept.evidence, { tier: 'L2', applied: 'used', stage: 'retention' });
   assert.equal(retentionReportOf(reuse, 'reverted').outcome, 'failed');
   assert.equal(retentionReportOf(reuse, 'rewritten'), null);
   assert.equal(retentionReportOf(reuse, 'no_change'), null);
@@ -209,13 +209,6 @@ test('the status a newer Proxy passes through is kept with the rejection', () =>
   assert.deepEqual(deliveryOf({ ok: true, data: { recorded: true, eligible: false, reason: 'daily_cap' } }), {
     verdict: 'sent', receipt: { eligible: false, reason: 'daily_cap' },
   });
-});
-
-test('a reuse that cannot be judged is exposure only, without the unused penalty', () => {
-  const report = immediate({ applied: 'unknown' });
-  assert.deepEqual(report.evidence, { tier: 'none', applied: 'partial', aborted: false, stage: 'immediate' });
-  assert.match(report.reason, /applied: unknown/);
-  assert.equal(immediate({ applied: 'unknown', checks: [{ command: 'npm test', failed: false }] }).evidence.tier, 'none');
 });
 
 test('the Hub verdict on a delivered report is kept with it and passed on', async () => {

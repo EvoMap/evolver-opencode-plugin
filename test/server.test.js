@@ -68,7 +68,7 @@ test('a recall slower than the wait joins the prompt at the next step, while its
   assert.match(messages[0].parts[1].text, /Apply them where they fit\.$/);
 });
 
-test('a completed turn reports its strategy with the last check and becomes the session candidate', async (t) => {
+test('a completed turn reports its strategy as used with the last check, and still becomes the session candidate', async (t) => {
   const { oc, proxy } = await harness(t);
   await oc.prompt('ses_ok', 'add a retry to the uploader');
   await oc.tool('ses_ok', 'edit', { filePath: 'src/upload.js', oldString: 'a', newString: 'retry with backoff' });
@@ -82,13 +82,23 @@ test('a completed turn reports its strategy with the last check and becomes the 
   assert.equal(report.outcome, 'success');
   assert.deepEqual(report.evidence.check, { kind: 'test', passed: true, fail_then_pass: false });
   assert.equal(report.evidence.aborted, false);
-  assert.match(report.reason, /OpenCode turn 1/);
-
+  assert.equal(report.reason, 'Injected by Evolver into OpenCode turn 1; last test passed.');
   assert.equal(report.evidence.applied, 'used');
-  assert.equal(pending().ses_ok, undefined, 'a turn that followed the injected strategy adds evidence to it, not a near-copy');
+  assert.equal(report.evidence.tier, 'L1');
+  assert.equal(pending().ses_ok?.prompt, 'add a retry to the uploader', 'a turn that reused an injected strategy is distilled too');
 });
 
-test('a verified turn that reused nothing is the candidate, on the session model; a correction drops it', async (t) => {
+test('an injected strategy is reported as used, whatever the turn did with it', async (t) => {
+  const { oc, proxy } = await harness(t);
+  await oc.prompt('ses_any', 'add a retry to the uploader');
+  await oc.bash('ses_any', 'ls', { exit: 0, output: 'README.md' });
+  await oc.answer('ses_any', 'Renamed the heading.');
+  await oc.idle('ses_any');
+  await until(() => reportsOf(proxy).length === 1, 'the report');
+  assert.deepEqual(reportsOf(proxy)[0].evidence, { tier: 'none', applied: 'used', aborted: false, stage: 'immediate' });
+});
+
+test('a verified turn is the candidate, on the session model; a correction drops it', async (t) => {
   const { oc } = await harness(t, { assets: [] });
   await oc.prompt('ses_c', 'make the parser accept trailing commas');
   await oc.bash('ses_c', 'npm test', { exit: 0, output: 'ℹ pass 9' });

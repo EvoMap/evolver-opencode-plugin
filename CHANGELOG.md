@@ -16,6 +16,9 @@ Keep Evolver out of the model context: recall behind the prompt, report at turn 
   length-capped, blocked) read from OpenCode's `session.error` and the last assistant message, and the check
   verdict from the bash tool's exit code. The next prompt revises it as a correction or praise.
 - Turn numbers survive a resumed session (`opencode-turns.json`), so reports never repeat a task id.
+- An injected strategy counts as used (dsh #55): every reuse report sends `applied: used`, tier `L1` whenever
+  a check ran, and a reason without an applied verdict. A verified turn that reused a strategy is a
+  distillation candidate like any other; the engine's intake drops a Gene that repeats one it already has.
 
 ### Added
 - Aborted reports for strategies whose turn never ended: at session deletion, at OpenCode shutdown (queued
@@ -31,6 +34,8 @@ Keep Evolver out of the model context: recall behind the prompt, report at turn 
 ### Removed
 - `hooks/`, `mcp/evolver-proxy.mjs`, `server.js`/`server.mjs`, `.opencode-plugin/plugin.json` and the
   session-end diff outcome recording they did.
+- The applied verdict (`src/applied.js`) and the per-turn buffer of edited code it read; a turn record keeps
+  the paths of the files it edited.
 
 ## 0.1.1 - 2026-06-25
 

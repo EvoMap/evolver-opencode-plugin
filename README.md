@@ -87,9 +87,9 @@ to `~/.evomap/claim_url` while signed in to [evomap.ai](https://evomap.ai), then
 
 ## Session-end distillation
 
-A turn that ended completed, used tools, passed its last check and reused no injected strategy leaves a
-candidate in `~/.evolver/state/opencode-distill-pending.json`; a later verified turn replaces it, and a next
-prompt that reads as a correction drops it. When the session ends, one call to the session's own model writes a
+A turn that ended completed, used tools and passed its last check leaves a candidate in
+`~/.evolver/state/opencode-distill-pending.json`, a turn that reused an injected strategy too (the engine's
+intake drops a Gene that repeats one it already has); a later verified turn replaces it, and a next prompt that reads as a correction drops it. When the session ends, one call to the session's own model writes a
 Gene from a digest of that turn (task, commands, touched paths, checks, final answer — never the whole history)
 and sends it to the Proxy's `POST /conversation/distill` with `persist: true`, `publish: false` and its own
 token cost as `distill_usage`. Keys and tokens are stripped from the candidate first, paths and a manual focus
@@ -110,26 +110,26 @@ Every strategy injected into a turn is reported through the Proxy's `POST /asset
 
 | Report | When | `task_id` | `evidence` |
 |---|---|---|---|
-| Turn end | the turn ends | `opencode:<session>:<turn>` | `tier` `L1` when the turn ran a test, build, lint or type check, else `none`; `applied`; `check` `{kind, passed, fail_then_pass}` of the last check; `aborted`; `stage: immediate` |
-| Correction | the next prompt says the answer did not hold, or approves it | `…:correction` | `tier: L3`, `applied`, `stage: correction` |
-| Retention | the next session in the same project finds the turn's edits kept or reverted | `…:retention` | `tier: L2`, `applied`, `stage: retention` |
-| Aborted | the session is deleted, or OpenCode exits or is killed, before the turn ends (a killed process's go out at the next session start) | `opencode:<session>:<turn>` | `tier: none`, `applied: partial`, `aborted: true`, `stage: immediate` |
+| Turn end | the turn ends | `opencode:<session>:<turn>` | `tier` `L1` when the turn ran a test, build, lint or type check, else `none`; `applied: used`; `check` `{kind, passed, fail_then_pass}` of the last check; `aborted`; `stage: immediate` |
+| Correction | the next prompt says the answer did not hold, or approves it | `…:correction` | `tier: L3`, `applied: used`, `stage: correction` |
+| Retention | the next session in the same project finds the turn's edits kept or reverted | `…:retention` | `tier: L2`, `applied: used`, `stage: retention` |
+| Aborted | the session is deleted, or OpenCode exits or is killed, before the turn ends (a killed process's go out at the next session start) | `opencode:<session>:<turn>` | `tier: none`, `applied: used`, `aborted: true`, `stage: immediate` |
 
 - **How a turn ended** is read from OpenCode itself: it goes idle after every turn, and the `session.error`
   before it (`MessageAbortedError` for an interrupt) and the last assistant message's `finish` tell a
   completed turn from an interrupted, failed, length-capped or permission-blocked one.
 - **Turn numbers** survive the process: a resumed session keeps its id, so its counter is kept in
   `~/.evolver/state/opencode-turns.json` for a month after its last turn and a report never repeats a task id.
-- **`applied`** compares the strategy's numbered steps with the turn's shell commands, touched paths, the code
-  its edits wrote (200,000 characters a turn, kept in memory only) and the final answer: `used` when half the
-  steps show up, `partial` when fewer do, `unused` when none do.
+- **`applied`** is always `used`: the model follows a strategy injected into its turn. Whether the strategy
+  helped is what the outcome says, judged by the turn's last check (or how the turn ended when it ran none),
+  the next prompt and whether its edits were kept.
 - **Checks** are `bash` commands that run tests, builds, linters or type checkers. A check fails on a non-zero
   exit code, on a run its timeout killed, or on failure output, since a failing run piped through `tail` still
   exits zero. A check the person denied or interrupted never finished and does not count.
 - **Delivery.** Reports wait in `~/.evolver/state/opencode-reports-outbox.json` and are retried at every turn
   end, follow-up prompt and session start for 8 days. A report is settled once the Hub answers it; one the Hub
   refuses as invalid is settled as rejected and never resent.
-- Reasons name the turn, the applied verdict and the check kind, never the prompt, a command, code or a diff,
+- Reasons name the turn and the check kind, never the prompt, a command, code or a diff,
   and the prompt loses keys and tokens before recall sends it.
 
 Every state file this plugin writes starts with `opencode-`, so another host's Evolver plugin never claims or

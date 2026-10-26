@@ -25,13 +25,12 @@ function fakeComplete(fixed = JSON.stringify(GENE), calls = []) {
   return complete;
 }
 
-test('only a verified, completed turn that used tools and reused no strategy becomes a candidate', () => {
+test('only a verified, completed turn that used tools becomes a candidate', () => {
   assert.equal(skipReason('completed', record()), null);
   assert.equal(skipReason('aborted', record()), 'not_completed');
   assert.equal(skipReason('completed', record({ answer: '' })), 'no_answer');
   assert.equal(skipReason('completed', record({ checks: [{ command: 'npm test', failed: true }] })), 'failed_check');
   assert.equal(skipReason('completed', record({ commands: [] })), 'no_tool_use');
-  assert.equal(skipReason('completed', record(), { reusedAsset: true }), 'asset_reused');
 });
 
 test('the prompt is a digest of the turn, never its whole history, and asks for no answer values', () => {
