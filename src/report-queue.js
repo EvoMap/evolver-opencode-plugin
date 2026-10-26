@@ -16,15 +16,17 @@ export function enqueueReports(queued, now = Date.now()) {
   return updateState(outboxPath(), {}, (outbox) => withQueued(outbox, queued, now));
 }
 
-// Another OpenCode process may queue reports while this one is delivering, so the
-// attempts are merged into the file as it stands afterwards, not over the
-// snapshot that was delivered.
+// Reports reach the outbox when they are handed over, not when an earlier delivery has finished, so a
+// process killed meanwhile loses none. Another OpenCode process may queue reports while this one is
+// delivering, so the attempts are merged into the file as it stands afterwards, not over the snapshot
+// that was delivered.
 export function createReportQueue(ledgers, clock = () => Date.now()) {
   let work = Promise.resolve();
   return function deliver(queued = []) {
+    enqueueReports(queued, clock());
     work = work.catch(() => {}).then(async () => {
       const now = clock();
-      const outbox = enqueueReports(queued, now);
+      const outbox = enqueueReports([], now);
       const delivered = await deliverPending(ledgers, outbox, now);
       updateState(outboxPath(), {}, (latest) => ({ ...withQueued(latest, [], now), ...attemptedEntries(outbox, delivered) }));
     });

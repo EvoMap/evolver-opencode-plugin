@@ -232,3 +232,18 @@ test('a check the person interrupted is reported as no check, not a failed one',
   assert.equal(report.evidence.aborted, true);
   assert.equal(report.evidence.tier, 'none');
 });
+
+test('a prompt still being handled when its session is deleted does not bring the session back', async (t) => {
+  let release;
+  const client = fakeClient();
+  const get = client.session.get;
+  client.session.get = async (options) => { await new Promise((resolve) => { release = resolve; }); return get(options); };
+  const { hooks, oc, proxy } = await harness(t, { client });
+  const prompt = hooks['chat.message']({ sessionID: 'ses_gone' }, { message: { id: 'msg_gone' }, parts: [{ type: 'text', text: 'add a retry to the uploader' }] });
+  await until(() => release, 'the session lookup');
+  await oc.event('session.deleted', { sessionID: 'ses_gone', info: { id: 'ses_gone' } });
+  release();
+  await prompt;
+  assert.deepEqual(requestsTo(proxy, '/asset/fetch'), []);
+  assert.equal(readState(statePath('opencode-turns.json'), {}).ses_gone, undefined);
+});

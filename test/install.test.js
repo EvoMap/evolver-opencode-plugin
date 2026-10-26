@@ -63,3 +63,24 @@ test('uninstall removes only what the installer owns', (t) => {
   assert.equal(fs.existsSync(p.pluginPath), false);
   assert.deepEqual(JSON.parse(fs.readFileSync(p.tuiConfigPath, 'utf8')).plugin, ['other-plugin']);
 });
+
+test('an old Evolver section without its end marker is left alone, with what follows it', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  const content = '# Project\n\n<!-- evolver-opencode-evolution-memory -->\nCall evolver_status.\n\n## Build\nnpm test\n';
+  fs.writeFileSync(p.agentsMdPath, content);
+  install({ configRoot: dir, force: false });
+  assert.equal(fs.readFileSync(p.agentsMdPath, 'utf8'), content);
+});
+
+test('a tui.json whose top level is not an object is reported and left as it is', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  fs.mkdirSync(path.dirname(p.tuiConfigPath), { recursive: true });
+  fs.writeFileSync(p.tuiConfigPath, 'null');
+  const report = install({ configRoot: dir, force: false });
+  assert.equal(report.ok, true);
+  assert.match(report.warning, /not changed/);
+  assert.equal(fs.readFileSync(p.tuiConfigPath, 'utf8'), 'null');
+  assert.equal(uninstall({ configRoot: dir }).removed, true);
+});

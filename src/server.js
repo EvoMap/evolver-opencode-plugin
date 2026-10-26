@@ -135,6 +135,7 @@ async function EvolverServer(input, options) {
   const labelable = new Map();
   const prompts = new Map();
   const started = new Set();
+  const deleted = new Set();
   const evolving = new Set();
   const onPrompt = followUpReporter(deliver, labelable, prompts, distiller);
 
@@ -190,6 +191,7 @@ async function EvolverServer(input, options) {
     'session.idle': ({ sessionID }) => closeTurn(sessionID),
     'session.deleted': ({ sessionID, info }) => {
       if (kindOfSession(info) !== PERSON) return;
+      deleted.add(sessionID);
       endSession(sessionID);
       deliver().catch(() => {});
       distiller.distillSession(sessionID).catch(() => {});
@@ -211,7 +213,7 @@ async function EvolverServer(input, options) {
     // A prompt sent while its session is busy joins the running turn and starts none.
     'chat.message': async ({ sessionID }, output) => {
       const isEvolve = evolving.delete(sessionID);
-      if ((await kinds.of(sessionID)) !== PERSON) return;
+      if ((await kinds.of(sessionID)) !== PERSON || deleted.has(sessionID)) return;
       if (turns.has(sessionID)) {
         if (turns.isBusy(sessionID)) return;
         closeTurn(sessionID);

@@ -86,14 +86,16 @@ function readJson(filePath) {
 }
 
 function tuiPlugins(config) {
-  return Array.isArray(config.plugin) ? config.plugin : [];
+  return Array.isArray(config?.plugin) ? config.plugin : [];
 }
+
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const isTuiEntry = (spec) => (Array.isArray(spec) ? spec[0] : spec) === TUI_ENTRY;
 
 function addTuiPlugin(filePath) {
   const { value, error } = readJson(filePath);
-  if (error) return `not changed: ${filePath} is not plain JSON; add "${TUI_ENTRY}" to its "plugin" list`;
+  if (error || !isPlainObject(value)) return `not changed: ${filePath} is not plain JSON; add "${TUI_ENTRY}" to its "plugin" list`;
   if (tuiPlugins(value).some(isTuiEntry)) return null;
   atomicWrite(filePath, `${JSON.stringify({ ...value, plugin: [...tuiPlugins(value), TUI_ENTRY] }, null, 2)}\n`);
   return null;
@@ -101,12 +103,13 @@ function addTuiPlugin(filePath) {
 
 function removeTuiPlugin(filePath) {
   const { value, error } = readJson(filePath);
-  if (error || !tuiPlugins(value).some(isTuiEntry)) return false;
+  if (error || !isPlainObject(value) || !tuiPlugins(value).some(isTuiEntry)) return false;
   atomicWrite(filePath, `${JSON.stringify({ ...value, plugin: tuiPlugins(value).filter((spec) => !isTuiEntry(spec)) }, null, 2)}\n`);
   return true;
 }
 
-// Installs before 0.2.0 wrote an Evolver section into AGENTS.md, which OpenCode puts in every prompt.
+// Installs before 0.2.0 wrote an Evolver section into AGENTS.md, which OpenCode puts in every prompt. They
+// always closed it with the end marker, so a section without one is not theirs to bound and is left alone.
 export function removeLegacyAgentsSection(filePath) {
   let content;
   try {
@@ -117,11 +120,9 @@ export function removeLegacyAgentsSection(filePath) {
   const start = content.indexOf(LEGACY_AGENTS_MARKER);
   if (start === -1) return false;
   const endMarker = content.indexOf(LEGACY_AGENTS_END_MARKER, start);
-  let end = content.length;
-  if (endMarker !== -1) {
-    const lineBreak = content.indexOf('\n', endMarker + LEGACY_AGENTS_END_MARKER.length);
-    end = lineBreak === -1 ? content.length : lineBreak + 1;
-  }
+  if (endMarker === -1) return false;
+  const lineBreak = content.indexOf('\n', endMarker + LEGACY_AGENTS_END_MARKER.length);
+  const end = lineBreak === -1 ? content.length : lineBreak + 1;
   atomicWrite(filePath, `${(content.slice(0, start).trimEnd() + content.slice(end)).trimEnd()}\n`);
   return true;
 }
