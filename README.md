@@ -4,136 +4,144 @@
 
 <h1 align="center">Evolver — Agent Self-Evolving Engine</h1>
 
-Give OpenCode a persistent, auditable evolution memory powered by
-[EvoMap](https://evomap.ai) and the Genome Evolution Protocol (GEP).
+**An OpenCode that gets smarter the more you use it.**
 
-The plugin recalls what worked in recent sessions during OpenCode compaction,
-detects improvement signals while OpenCode edits files, and records outcomes
-when a session is deleted. It uses the same memory format as the Evolver Claude
-Code and Cursor plugins, so successful patterns can be reused across agent
-hosts without sharing unrelated project state.
+Most agents have goldfish memory. They fall into the same hole the last session fell into, and re-derive
+yesterday's working fix from scratch. Evolver lets your OpenCode agent evolve itself: every success becomes a
+shortcut for next time, and every failure becomes a warning.
 
-## What it does
+- **Each prompt starts with a proven strategy.** Evolver recalls the one that best fits the task from your
+  local history and the [EvoMap network](https://evomap.ai) and hands it to the agent behind your prompt.
+- **Graded on evidence, not a hunch.** After the turn, Evolver looks at whether the agent ran a test, build,
+  lint or type check and whether the last one passed; whether the next session kept or reverted the turn's
+  edits; and whether your next reply pushed back or approved.
+- **Survival of the fittest.** Every verdict goes back to the EvoMap network with its evidence tier.
+  Strategies that work get recalled more often; ones proven wrong sink.
 
-| OpenCode event | Evolver hook | Effect |
-|---|---|---|
-| `session.created` | `hooks/session-start.js` | Prepares recent successful outcomes for this workspace. When a node has been registered locally but not yet connected to the network, also gives a one-time (throttled) nudge to claim it. |
-| `experimental.session.compacting` | `hooks/session-start.js` | Adds Evolver memory to OpenCode's compaction context. |
-| `tool.execute.after` (`write`/`edit`) | `hooks/signal-detect.js` | Detects evolution signals in edited content. |
-| `session.deleted` | `hooks/session-end.js` | Records one current-diff outcome to local memory. |
-
-Memory is workspace-scoped via `<repo>/.evolver/workspace-id`, so one project's
-outcomes do not leak into another project.
+Nothing of Evolver but the recalled steps enters the model's context: no tools, no instructions. Reports go out
+at every turn end, the session's verified work is distilled when the session ends, and the `/evolver-*`
+commands (status, search, distill, sync, review, run, solidify) run in the plugin, not through the model;
+only `/evolver-evolve` hands the agent a one-off checkpoint prompt. Set `skillEnabled: true` in the plugin
+options to also offer the agent the `capability-evolver` skill, which explains all this; its catalog line then
+rides every turn.
 
 ## Install
 
-### npm package mode
+Requires OpenCode 1.19.4 or newer.
 
-Add the package to your OpenCode config:
+```bash
+opencode plugin evolver-opencode-plugin
+```
+
+OpenCode installs the package and lists it twice: in `opencode.json` for the server plugin (recall, reports,
+distillation) and in `tui.json` for the TUI plugin (the `/evolver-*` commands). Restart OpenCode afterwards.
+Add `-g` to install it for every project. Options go in `opencode.json`:
 
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["evolver-opencode-plugin"]
+  "plugin": [["evolver-opencode-plugin", { "skillEnabled": false, "assetPrimeMinSimilarity": 0.3 }]]
 }
 ```
 
-Restart OpenCode. OpenCode installs npm plugins automatically with Bun at
-startup and loads the server plugin from this package's `./server` entrypoint.
+Settings and their defaults are in [`src/config.js`](src/config.js).
 
 ### Local file mode
 
-For local development or manual installation:
+For development, or to run a checkout:
 
 ```bash
-npx evolver-opencode-plugin --install --config-root /path/to/project --force
-npx evolver-opencode-plugin --verify --config-root /path/to/project
+node scripts/install.js --install --config-root /path/to/project
+node scripts/install.js --verify --config-root /path/to/project
 ```
 
-This writes a small managed delegate file to
-`/path/to/project/.opencode/plugins/evolver.js`.
+This writes a managed delegate to `.opencode/plugins/evolver.js` and lists `src/tui.js` in
+`.opencode/tui.json`. `--uninstall` removes both, and installing also removes the Evolver section that
+versions before 0.2.0 wrote into `AGENTS.md`.
 
-Either way, that's it — **local evolution memory works with zero config**: no
-account, no key, and nothing to paste in. The network layer below is optional.
+## Commands
 
-## Connecting to the EvoMap network (optional)
+| Command | What it does |
+|---|---|
+| `/evolver-status` | Proxy, Hub auth, recent recalls and the Hub's verdict on recent reuse reports |
+| `/evolver-search` | Searches the EvoMap network for reusable assets |
+| `/evolver-distill` | Distills the open session's latest verified turn now, instead of at session end |
+| `/evolver-sync`, `/evolver-review`, `/evolver-run`, `/evolver-solidify` | Run `evolver <command>` in the project (the installed `evolver`, else `npx -y @evomap/evolver@^2.0.39`), ten minutes at most |
+| `/evolver-evolve` | Hands the agent a reflection checkpoint on the current work, with an optional focus |
 
-The network layer (searching and reusing genes & capsules) is opt-in. To connect:
+OpenCode's own slash commands are prompt templates the model answers, so every command but `/evolver-evolve`
+lives in the TUI plugin and answers in a dialog. Pick it from the `/` menu or the command palette: a command
+that takes text asks for it in a dialog. Text typed after the command name on the prompt line is sent to the
+model as an ordinary prompt instead, because OpenCode only runs a TUI command it was handed from its menu.
 
-1. **Leave `EVOMAP_NODE_ID` blank.** Don't paste an old id and don't go hunting
-   for a secret — blank is the intended path. On first run the local Proxy
-   registers a fresh node for you and prints a link to claim it; you never enter
-   an id or a secret yourself.
-2. Install the engine and run it once inside a git repo:
+## Connect the EvoMap network (optional)
 
-   ```bash
-   npm i -g @evomap/evolver
-   evolver
-   ```
+Local memory works without an account. Network reuse runs through the local Evolver Proxy, which the plugin
+sets up on its own once per OpenCode instance (project directory), in the background:
 
-   The first run registers a fresh node and prints a **claim link**.
-3. Open that link while signed in to [evomap.ai](https://evomap.ai) to claim the
-   node — that's the only step. Check status any time with the `evolver_status`
-   MCP tool (the `evolver-proxy` bridge this plugin ships).
+- `evolver` missing, or older than 2.0.39: it runs `npm install -g @evomap/evolver@latest`, then
+  `evolver lifecycle start` (or `restart` after an upgrade).
+- `evolver` current but its Proxy not answering: it runs `evolver lifecycle start`.
 
-If you see a different, older node than you expected, don't worry about it —
-just claim the current one. Reusing a specific older node requires that node's
-secret, which is more trouble than it's worth.
+What it did, or why it could not, shows as a toast. To finish connecting, open the claim link the Proxy writes
+to `~/.evomap/claim_url` while signed in to [evomap.ai](https://evomap.ai), then run `/evolver-status`.
 
-## Requirements
+## Session-end distillation
 
-- Node.js 18 or newer.
-- Git, because outcomes are derived from git diffs.
-- OpenCode 1.x.
+A turn that ended completed, used tools and passed its last check leaves a candidate in
+`~/.evolver/state/opencode-distill-pending.json`, a turn that reused an injected strategy too (the engine's
+intake drops a Gene that repeats one it already has); a later verified turn replaces it, and a next prompt that reads as a correction drops it. When the session ends, one call to the session's own model writes a
+Gene from a digest of that turn (task, commands, touched paths, checks, final answer — never the whole history)
+and sends it to the Proxy's `POST /conversation/distill` with `persist: true`, `publish: false` and its own
+token cost as `distill_usage`. Keys and tokens are stripped from the candidate first, paths and a manual focus
+included.
 
-The plugin works offline by default and writes local memory to
-`~/.evolver/memory/evolution/memory_graph.jsonl` unless the project already has
-`memory/evolution/memory_graph.jsonl` or `MEMORY_GRAPH_PATH` is set.
+OpenCode gives a plugin no model call of its own, so that call is a prompt in a helper session: created with
+every tool denied, archived, marked in its metadata so this plugin neither recalls into it nor records it, and
+deleted once answered. A session ends when it is deleted, which distills it at once, or when OpenCode shuts
+down, which only closes its candidate, because shutdown waits five seconds at most. A candidate stays on disk
+until it is distilled (three failed tries give it up); one whose session is over — closed, or left by an
+OpenCode process that was killed — is claimed by the next session that starts, one process at a time, while an
+idle session keeps its own. `/evolver-distill` does the same at once.
 
-## Optional Evolver engine
+## Reuse reports
 
-The plugin hooks are self-contained and do not require the Evolver engine. To
-unlock the full CLI, proxy mailbox, asset search, review, and solidify flows:
+Every strategy injected into a turn is reported through the Proxy's `POST /asset/reuse-result` as
+`{asset_id, outcome, task_id, reason, evidence}`. The Hub weighs each report by its evidence:
 
-```bash
-npm install -g @evomap/evolver
-evolver
-```
+| Report | When | `task_id` | `evidence` |
+|---|---|---|---|
+| Turn end | the turn ends | `opencode:<session>:<turn>` | `tier` `L1` when the turn ran a test, build, lint or type check, else `none`; `applied: used`; `check` `{kind, passed, fail_then_pass}` of the last check; `aborted`; `stage: immediate` |
+| Correction | the next prompt says the answer did not hold, or approves it | `…:correction` | `tier: L3`, `applied: used`, `stage: correction` |
+| Retention | the next session in the same project finds the turn's edits kept or reverted | `…:retention` | `tier: L2`, `applied: used`, `stage: retention` |
+| Aborted | the session is deleted, or OpenCode exits or is killed, before the turn ends (a killed process's go out at the next session start) | `opencode:<session>:<turn>` | `tier: none`, `applied: used`, `aborted: true`, `stage: immediate` |
 
-Running `evolver` starts the local EvoMap Proxy mailbox. This repository also
-ships the same thin `mcp/evolver-proxy.mjs` bridge used by the sibling plugins
-for MCP clients that can consume it.
+- **How a turn ended** is read from OpenCode itself: it goes idle after every turn, and the `session.error`
+  before it (`MessageAbortedError` for an interrupt) and the last assistant message's `finish` tell a
+  completed turn from an interrupted, failed, length-capped or permission-blocked one.
+- **Turn numbers** survive the process: a resumed session keeps its id, so its counter is kept in
+  `~/.evolver/state/opencode-turns.json` for a month after its last turn and a report never repeats a task id.
+- **`applied`** is always `used`: the model follows a strategy injected into its turn. Whether the strategy
+  helped is what the outcome says, judged by the turn's last check (or how the turn ended when it ran none),
+  the next prompt and whether its edits were kept.
+- **Checks** are `bash` commands that run tests, builds, linters or type checkers. A check fails on a non-zero
+  exit code, on a run its timeout killed, or on failure output, since a failing run piped through `tail` still
+  exits zero. A check the person denied or interrupted never finished and does not count.
+- **Delivery.** Reports wait in `~/.evolver/state/opencode-reports-outbox.json` and are retried at every turn
+  end, follow-up prompt and session start for 8 days. A report is settled once the Hub answers it; one the Hub
+  refuses as invalid is settled as rejected and never resent.
+- Reasons name the turn and the check kind, never the prompt, a command, code or a diff,
+  and the prompt loses keys and tokens before recall sends it.
 
-## Verify
+Every state file this plugin writes starts with `opencode-`, so another host's Evolver plugin never claims or
+reports its entries.
 
-For this repository:
+## Development
 
 ```bash
 npm test
 npm run pack:dry
 ```
 
-For a local-file install:
-
-```bash
-npx evolver-opencode-plugin --verify --config-root /path/to/project
-```
-
-OpenCode's TUI plugin list is for TUI plugins. Evolver is a server/event plugin,
-so it runs in the background and may not appear in UI-only plugin screens.
-
-## Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `EVOLVER_OPENCODE_HOOKS_DIR` | Override the package hooks directory. |
-| `OPENCODE_PROJECT_DIR` | Set by this plugin before invoking hooks. |
-| `MEMORY_GRAPH_PATH` | Override the local memory graph JSONL path. |
-| `EVOLVER_WORKSPACE_ID` | Override workspace scoping id. |
-| `EVOMAP_HUB_URL` / `EVOMAP_API_KEY` / `EVOMAP_NODE_ID` | Optional Hub recording from the session-end hook. Leave `EVOMAP_NODE_ID` blank (recommended): on first run the local Proxy registers a fresh node for you and prints a link to claim it on evomap.ai — you never paste an id or a secret here. Only set it to point the install at a node you already run yourself. |
-
 ## License
 
-MIT (c) EvoMap. The bundled hook scripts and OpenCode bridge are clean-room
-implementations. Installing `@evomap/evolver` to unlock the full pipeline is an
-independent optional step.
+MIT © EvoMap.

@@ -1,137 +1,86 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
 
-const installer = require('../scripts/install');
+import { TUI_ENTRY, install, paths, uninstall, verify } from '../scripts/install.js';
 
-function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'evomap-opencode-install-'));
+function configRoot(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolver-opencode-install-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
-function cleanup(dir) {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch (_err) {
-    // best effort
-  }
-}
+test('a local install writes the server delegate and lists the TUI plugin, and verifies', async (t) => {
+  const dir = configRoot(t);
+  const report = install({ configRoot: dir, force: false });
+  assert.equal(report.ok, true);
 
-describe('local-file installer', () => {
-  it('installs a managed delegate plugin and verifies it', () => {
-    const dir = tmpDir();
-    try {
-      const report = installer.install({ configRoot: dir, force: false });
-      assert.equal(report.ok, true);
+  const p = paths(dir);
+  const { default: plugin } = await import(p.pluginPath);
+  assert.equal(plugin.id, 'evomap.evolver');
+  assert.equal(typeof plugin.server, 'function');
+  assert.deepEqual(JSON.parse(fs.readFileSync(p.tuiConfigPath, 'utf8')).plugin, [TUI_ENTRY]);
 
-      const p = installer.paths(dir);
-      assert.ok(fs.existsSync(p.pluginPath));
-      assert.ok(fs.readFileSync(p.pluginPath, 'utf8').includes('_evolver_managed: true'));
-      assert.ok(fs.readFileSync(p.agentsMdPath, 'utf8').includes(installer.EVOLVER_MARKER));
+  const verified = await verify({ configRoot: dir });
+  assert.equal(verified.ok, true, JSON.stringify(verified, null, 2));
+});
 
-      const mod = require(p.pluginPath);
-      assert.equal(typeof mod.Evolver, 'function');
+test('installing twice lists the TUI plugin once and keeps the rest of tui.json', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  fs.mkdirSync(path.dirname(p.tuiConfigPath), { recursive: true });
+  fs.writeFileSync(p.tuiConfigPath, JSON.stringify({ theme: 'opencode', plugin: ['other-plugin'] }));
+  install({ configRoot: dir, force: false });
+  install({ configRoot: dir, force: false });
+  assert.deepEqual(JSON.parse(fs.readFileSync(p.tuiConfigPath, 'utf8')), { theme: 'opencode', plugin: ['other-plugin', TUI_ENTRY] });
+});
 
-      const verify = installer.verify({ configRoot: dir });
-      assert.equal(verify.ok, true, JSON.stringify(verify, null, 2));
-    } finally {
-      cleanup(dir);
-    }
-  });
+test('a user-owned plugin file is not overwritten without --force', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  fs.mkdirSync(path.dirname(p.pluginPath), { recursive: true });
+  fs.writeFileSync(p.pluginPath, 'export default {};\n');
+  assert.equal(install({ configRoot: dir, force: false }).ok, false);
+  assert.equal(install({ configRoot: dir, force: true }).ok, true);
+});
 
-  it('refuses to overwrite a user-owned plugin without force', () => {
-    const dir = tmpDir();
-    try {
-      const p = installer.paths(dir);
-      fs.mkdirSync(path.dirname(p.pluginPath), { recursive: true });
-      fs.writeFileSync(p.pluginPath, 'module.exports = {};\n', 'utf8');
-      const report = installer.install({ configRoot: dir, force: false });
-      assert.equal(report.ok, false);
-      assert.match(report.error, /refusing to overwrite/);
-    } finally {
-      cleanup(dir);
-    }
-  });
+test('the Evolver section an older install wrote into AGENTS.md is removed', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  fs.writeFileSync(p.agentsMdPath, '# Project\n\n<!-- evolver-opencode-evolution-memory -->\nCall evolver_status.\n<!-- /evolver-opencode-evolution-memory -->\n');
+  install({ configRoot: dir, force: false });
+  assert.equal(fs.readFileSync(p.agentsMdPath, 'utf8'), '# Project\n');
+});
 
-  it('uninstalls only managed files and AGENTS.md section', () => {
-    const dir = tmpDir();
-    try {
-      installer.install({ configRoot: dir, force: false });
-      const p = installer.paths(dir);
-      const report = installer.uninstall({ configRoot: dir });
-      assert.equal(report.ok, true);
-      assert.equal(report.removed, true);
-      assert.ok(!fs.existsSync(p.pluginPath));
-      assert.ok(!fs.readFileSync(p.agentsMdPath, 'utf8').includes(installer.EVOLVER_MARKER));
-    } finally {
-      cleanup(dir);
-    }
-  });
+test('uninstall removes only what the installer owns', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  install({ configRoot: dir, force: false });
+  fs.writeFileSync(p.tuiConfigPath, JSON.stringify({ plugin: ['other-plugin', TUI_ENTRY] }));
+  assert.equal(uninstall({ configRoot: dir }).removed, true);
+  assert.equal(fs.existsSync(p.pluginPath), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(p.tuiConfigPath, 'utf8')).plugin, ['other-plugin']);
+});
 
-  it('removes the whole managed AGENTS.md section before reinstalling', () => {
-    const dir = tmpDir();
-    try {
-      installer.install({ configRoot: dir, force: false });
-      const p = installer.paths(dir);
-      installer.uninstall({ configRoot: dir });
+test('an old Evolver section without its end marker is left alone, with what follows it', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  const content = '# Project\n\n<!-- evolver-opencode-evolution-memory -->\nCall evolver_status.\n\n## Build\nnpm test\n';
+  fs.writeFileSync(p.agentsMdPath, content);
+  install({ configRoot: dir, force: false });
+  assert.equal(fs.readFileSync(p.agentsMdPath, 'utf8'), content);
+});
 
-      const afterUninstall = fs.readFileSync(p.agentsMdPath, 'utf8');
-      assert.ok(!afterUninstall.includes(installer.EVOLVER_MARKER));
-      assert.ok(!afterUninstall.includes('## Evolution Memory (Evolver)'));
-
-      installer.install({ configRoot: dir, force: false });
-      installer.uninstall({ configRoot: dir });
-      const afterSecondUninstall = fs.readFileSync(p.agentsMdPath, 'utf8');
-      assert.ok(!afterSecondUninstall.includes('## Evolution Memory (Evolver)'));
-    } finally {
-      cleanup(dir);
-    }
-  });
-
-  it('removes legacy marker-only AGENTS.md sections', () => {
-    const dir = tmpDir();
-    try {
-      const p = installer.paths(dir);
-      fs.writeFileSync(
-        p.agentsMdPath,
-        [
-          '# Project',
-          '',
-          installer.EVOLVER_MARKER,
-          '## Evolution Memory (Evolver)',
-          '',
-          'legacy body',
-          '',
-          '## Keep Me',
-          '',
-          'real section',
-          '',
-        ].join('\n'),
-        'utf8'
-      );
-
-      const report = installer.uninstall({ configRoot: dir });
-      assert.equal(report.ok, true);
-      const content = fs.readFileSync(p.agentsMdPath, 'utf8');
-      assert.ok(!content.includes(installer.EVOLVER_MARKER));
-      assert.ok(!content.includes('legacy body'));
-      assert.ok(content.includes('## Keep Me'));
-    } finally {
-      cleanup(dir);
-    }
-  });
-
-  it('reports verify failure before install', () => {
-    const dir = tmpDir();
-    try {
-      const report = installer.verify({ configRoot: dir });
-      assert.equal(report.ok, false);
-      const failed = report.checks.filter((check) => !check.ok).map((check) => check.id);
-      assert.ok(failed.includes('plugin_file_present'));
-      assert.ok(failed.includes('plugin_loadable'));
-    } finally {
-      cleanup(dir);
-    }
-  });
+test('a tui.json whose top level is not an object is reported and left as it is', (t) => {
+  const dir = configRoot(t);
+  const p = paths(dir);
+  fs.mkdirSync(path.dirname(p.tuiConfigPath), { recursive: true });
+  fs.writeFileSync(p.tuiConfigPath, 'null');
+  const report = install({ configRoot: dir, force: false });
+  assert.equal(report.ok, true);
+  assert.match(report.warning, /not changed/);
+  assert.equal(fs.readFileSync(p.tuiConfigPath, 'utf8'), 'null');
+  assert.equal(uninstall({ configRoot: dir }).removed, true);
 });

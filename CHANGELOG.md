@@ -1,27 +1,41 @@
 # Changelog
 
-## [Unreleased]
+## 0.2.0 - 2026-10-26
+
+Keep Evolver out of the model context: recall behind the prompt, report at turn end, distill at session end.
 
 ### Changed
-- MCP bridge is Recipe-first: `evolver_recipe_search` then `evolver_recipe_express`
-  against Proxy `/recipe/search` and `/recipe/express`. `evolver_search_assets`
-  remains as Gene/Capsule fallback when no Recipe hits.
+- Rewritten as a native OpenCode plugin package: `./server` (recall, reports, distillation) and `./tui`
+  (the `/evolver-*` commands). The Claude-style command hooks, the `evolver-proxy` MCP bridge and the
+  always-on `capability-evolver` skill are gone, so no `evolver_*` tool and no Evolver instruction reaches the
+  model. The skill is offered only with `skillEnabled: true`.
+- The recalled strategy joins each prompt as synthetic text behind it and ends with `Apply them where they
+  fit.`; a recall slower than the wait joins the turn's next step. Nothing else is injected: no
+  `[Evolution Signal]` after edits, no session-start text, and the claim reminder is off by default.
+- Every injected strategy is reported at turn end, with the turn's real end (completed, interrupted, failed,
+  length-capped, blocked) read from OpenCode's `session.error` and the last assistant message, and the check
+  verdict from the bash tool's exit code. The next prompt revises it as a correction or praise.
+- Turn numbers survive a resumed session (`opencode-turns.json`), so reports never repeat a task id.
+- An injected strategy counts as used (dsh #55): every reuse report sends `applied: used`, tier `L1` whenever
+  a check ran, and a reason without an applied verdict. A verified turn that reused a strategy is a
+  distillation candidate like any other; the engine's intake drops a Gene that repeats one it already has.
 
-### Changed — onboarding UX
+### Added
+- Aborted reports for strategies whose turn never ended: at session deletion, at OpenCode shutdown (queued
+  only), and, for a killed process, at the next session start.
+- Session-end distillation of the session's latest verified turn through the session's own model in a
+  tool-less, archived helper session, sent to the Proxy's `POST /conversation/distill`; a candidate is kept
+  until distilled or given up after three tries, and a closed or orphaned one is claimed by the next session.
+- `/evolver-status`, `/evolver-search`, `/evolver-distill`, `/evolver-sync`, `/evolver-review`, `/evolver-run`
+  and `/evolver-solidify` run in the TUI plugin and answer in a dialog; `/evolver-evolve` is the one prompt
+  command.
+- The local installer lists the TUI plugin in `.opencode/tui.json` and removes the old `AGENTS.md` section.
 
-- `hooks/session-start.js`: add a throttled (12h) pending-claim nudge. When the
-  engine has registered a local node but left a claim link in `~/.evomap/claim_url`,
-  surface a one-time reminder to open the link on evomap.ai — no id or secret to
-  enter — while making clear local evolution memory already works without it.
-- `README.md`: state that local evolution memory works with zero config, add a
-  "Connecting to the EvoMap network (optional)" three-step section (leave
-  `EVOMAP_NODE_ID` blank → run `evolver` once to print a claim link → claim on
-  evomap.ai), reword the `EVOMAP_NODE_ID` env-var row to the leave-blank guidance,
-  and note the one-time session-start claim nudge in the hooks table.
-- `skills/capability-evolver/SKILL.md`: add plain-language guidance for reporting
-  `evolver_status` — pending claim link means not-yet-connected, HTTP 402 means
-  the network features need credits, Proxy-down still leaves local memory working;
-  don't dump raw JSON or internal terms.
+### Removed
+- `hooks/`, `mcp/evolver-proxy.mjs`, `server.js`/`server.mjs`, `.opencode-plugin/plugin.json` and the
+  session-end diff outcome recording they did.
+- The applied verdict (`src/applied.js`) and the per-turn buffer of edited code it read; a turn record keeps
+  the paths of the files it edited.
 
 ## 0.1.1 - 2026-06-25
 
