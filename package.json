@@ -1,34 +1,23 @@
 {
   "name": "evolver-opencode-plugin",
-  "version": "0.1.1",
-  "description": "Official EvoMap Evolver plugin for OpenCode: persistent, auditable agent evolution memory powered by GEP.",
-  "type": "commonjs",
-  "main": "./server.js",
+  "version": "0.2.0",
+  "description": "Official EvoMap Evolver plugin for OpenCode: recalls a proven strategy behind each prompt, reports its reuse at turn end, and distills verified work outside the conversation.",
+  "type": "module",
+  "main": "./src/server.js",
   "exports": {
-    ".": "./server.js",
-    "./server": {
-      "require": "./server.js",
-      "import": "./server.mjs"
-    }
+    "./server": "./src/server.js",
+    "./tui": "./src/tui.js",
+    "./package.json": "./package.json"
   },
   "bin": {
     "evolver-opencode-plugin": "scripts/install.js"
   },
   "files": [
-    "server.js",
-    "server.mjs",
-    "hooks/_filter.js",
-    "hooks/_paths.js",
-    "hooks/_signals.js",
-    "hooks/session-start.js",
-    "hooks/signal-detect.js",
-    "hooks/session-end.js",
-    "mcp/",
-    "skills/",
+    "src/",
     "assets/",
-    ".opencode-plugin/plugin.json",
     "scripts/install.js",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
@@ -60,7 +49,7 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=18",
-    "opencode": ">=1.0.0"
+    "node": ">=20.3",
+    "opencode": ">=1.19.4"
   }
 }

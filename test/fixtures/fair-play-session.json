@@ -1,0 +1,494 @@
+{
+ "source": "dsh session 793c01b3, turns 1-2, with the home directory renamed and non-check command output shortened",
+ "turns": [
+  {
+   "turn": 1,
+   "strategyText": "[Evolution Memory] Pseudo-random distribution with configurable pity timers and weighted loot table (EvoMap network):\n1. Implement PRD algorithm where actual drop probability increases with each failed roll\n2. Add configurable pity timers to guarantee upper bounds on bad luck streaks\n3. Use weighted loot tables with dynamic adjustment based on player segments\n4. Include transparency features to show players bad luck protection progress\n\nThese are the complete steps already recalled from the network, so there is nothing more to search or fetch for this task.\nApply them where they fit, then report the outcome with evolver_asset_reuse_result for sha256:872ad8edfa0d86d74140e386528acc4aee7812c946b9e3200c4464468586d0ea.",
+   "prompt": "fair play",
+   "tools": [
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "pwd && ls -la /home/dev | head -50",
+      "description": "Show working directory and its contents"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "(output shortened)"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "ls -la /home/dev",
+      "description": "List home directory contents"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "(output shortened)"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "ls -la /home/dev/workspace /home/dev/Project 2>/dev/null",
+      "description": "Inspect workspace and Project folders"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "(output shortened)"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cat /home/dev/package.json 2>/dev/null; node --version 2>/dev/null; python3 --version 2>/dev/null",
+      "description": "Check package.json and runtimes"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "(output shortened)"
+       }
+      ]
+     }
+    },
+    {
+     "name": "todo_write",
+     "arguments": {
+      "todos": [
+       {
+        "content": "Scaffold fair-play project (package.json, dirs)",
+        "status": "in_progress"
+       },
+       {
+        "content": "Implement PRD engine with pity caps + periodic pity timers (src/fair-play.js)",
+        "status": "pending"
+       },
+       {
+        "content": "Implement weighted loot table with segment-based dynamic adjustment (src/loot-table.js)",
+        "status": "pending"
+       },
+       {
+        "content": "Add transparency/progress reporting + state persistence",
+        "status": "pending"
+       },
+       {
+        "content": "Write node:test tests covering PRD, pity guarantee, tables, segments, timers, persistence",
+        "status": "pending"
+       },
+       {
+        "content": "Write simulation + fairness report script and run it",
+        "status": "pending"
+       },
+       {
+        "content": "Write README, run all tests, report evolver_asset_reuse_result",
+        "status": "pending"
+       }
+      ]
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "Updated todo list: 6 pending, 1 in progress, 0 completed."
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/package.json",
+      "content": "{\n  \"name\": \"fair-play\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Fair-play drop/loot engine: pseudo-random distribution (PRD) with pity caps, configurable pity timers, segment-adjusted weighted loot tables, and transparency reporting.\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"exports\": {\n    \".\": \"./src/index.js\"\n  },\n  \"scripts\": {\n    \"test\": \"node --test test/\",\n    \"simulate\": \"node simulate.js\"\n  },\n  \"engines\": {\n    \"node\": \">=18\"\n  },\n  \"license\": \"MIT\"\n}\n"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/package.json</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "/**\n * Fair-play drop engine.\n *\n * Implements the four pillars of \"fair play\" loot design:\n *   1. PRD (pseudo-random distribution): the effective drop probability grows\n *      with every consecutive failure, so bad-luck streaks are front-loaded\n *      away and the long-run average matches the configured base rate.\n *   2. Configurable pity caps: a hard guarantee that bounds the worst-case\n *      streak (roll N is always a drop), plus periodic pity timers that\n *      reset progress on a calendar window (daily/weekly/monthly events).\n *   3. Weighted loot tables with segment-based dynamic adjustment\n *      (see src/loot-table.js).\n *   4. Transparency: players can always read their current streak, the\n *      effective chance of the next roll, and how many rolls remain until\n *      the guaranteed drop.\n *\n * Zero runtime dependencies; the RNG and the clock are injectable so tests\n * and simulations are fully deterministic.\n */\n\nconst DAY_MS = 86_400_000;\nconst WEEK_MS = 7 * DAY_MS;\n\n/** @typedef {{baseRate?: number, increment?: number, pityCap?: number,\n *   periodicReset?: 'none'|'daily'|'weekly'|'monthly', resetHourUtc?: number,\n *   rng?: () => number, now?: () => number, historySize?: number}} EngineConfig */\n\nfunction assertPositiveInt(name, value) {\n  if (!Number.isInteger(value) || value < 1) {\n    throw new RangeError(`${name} must be a positive integer, got ${value}`);\n  }\n}\n\n/** Bucket a timestamp into the current pity window id. */\nfunction windowId(periodicReset, resetHourUtc, nowMs) {\n  if (periodicReset === 'none') return 'always';\n  const shifted = new Date(nowMs + resetHourUtc * 3_600_000);\n  if (periodicReset === 'daily') {\n    return shifted.toISOString().slice(0, 10); // YYYY-MM-DD (UTC-shifted)\n  }\n  if (periodicReset === 'monthly') {\n    return shifted.toISOString().slice(0, 7); // YYYY-MM\n  }\n  if (periodicReset === 'weekly') {\n    // ISO week number of the shifted date.\n    const d = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));\n    const dayNum = (d.getUTCDay() + 6) % 7; // Mon = 0\n    const thursday = new Date(d);\n    thursday.setUTCDate(d.getUTCDate() - dayNum + 3);\n    const isoYear = thursday.getUTCFullYear();\n    const firstThursday = new Date(Date.UTC(isoYear, 0, 4));\n    const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;\n    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);\n    const week = 1 + Math.round((thursday - firstThursday) / WEEK_MS);\n    return `${isoYear}-W${String(week).padStart(2, '0')}`;\n  }\n  throw new RangeError(`Unsupported periodicReset: ${periodicReset}`);\n}\n\nexport class FairPlayEngine {\n  /**\n   * @param {EngineConfig} [config]\n   */\n  constructor(config = {}) {\n    this.config = {\n      baseRate: 0.02,        // per-roll probability at streak 0\n      increment: 0.005,      // PRD ramp: added per consecutive failure\n      pityCap: 90,           // hard cap: the 90th consecutive failure drops for sure\n      periodicReset: 'none', // 'none' | 'daily' | 'weekly' | 'monthly'\n      resetHourUtc: 0,       // hour (UTC) at which a new pity window starts\n      rng: Math.random,\n      now: () => Date.now(),\n      historySize: 50,\n      ...config,\n    };\n    const { baseRate, increment, pityCap, periodicReset, rng, now } = this.config;\n    if (!(baseRate > 0 && baseRate < 1)) {\n      throw new RangeError(`baseRate must be in (0, 1), got ${baseRate}`);\n    }\n    if (!(increment >= 0 && increment < 1)) {\n      throw new RangeError(`increment must be in [0, 1), got ${increment}`);\n    }\n    assertPositiveInt('pityCap', pityCap);\n    if (typeof rng !== 'function' || typeof now !== 'function') {\n      throw new TypeError('rng and now must be functions');\n    }\n    const w = this.currentWindowId();\n    this.state = {\n      streak: 0,             // consecutive failures since the last drop\n      windowId: w,           // pity window the streak belongs to\n      lastDropAt: null,      // epoch ms of the last drop (null = no drop yet)\n      totalRolls: 0,\n      totalDrops: 0,\n      resetsFromWindow: 0,   // how often a new window wiped a streak (transparency)\n      history: [],           // recent drops: { roll, at, streakBefore }\n    };\n  }\n\n  /** @returns {string} the current pity-window id. */\n  currentWindowId() {\n    return windowId(this.config.periodicReset, this.config.resetHourUtc, this.config.now());\n  }\n\n  /**\n   * Effective chance of a drop for a given number of consecutive failures,\n   * before the pity guarantee kicks in. Monotonically non-decreasing in s.\n   * @param {number} streak consecutive failures so far\n   * @returns {number} probability in [0, 1]\n   */\n  effectiveChanceAt(streak) {\n    if (streak >= this.config.pityCap - 1) return 1;\n    return Math.min(this.config.baseRate + this.config.increment * streak, 1);\n  }\n\n  /**\n   * Expected long-run drop rate (drops per roll) for the configured PRD + pity,\n   * derived analytically from the renewal process: E[rolls per drop] =\n   * sum over n of P(T >= n). Used to validate simulations and to show players\n   * the \"true\" rate the PRD is calibrated to.\n   */\n  theoreticalRate() {\n    const { pityCap } = this.config;\n    let survival = 1; // P(no drop in the first 0 rolls)\n    let expectation = 0;\n    for (let n = 1; n <= pityCap; n++) {\n      expectation += survival; // P(T >= n)\n      const p = this.effectiveChanceAt(n - 1);\n      survival *= 1 - p;\n      if (survival === 0) break;\n    }\n    return 1 / expectation;\n  }\n\n  /**\n   * Roll once. Returns true when the drop happens.\n   * @returns {boolean}\n   */\n  roll() {\n    const { periodicReset, pityCap, rng, now } = this.config;\n    const s = this.state.streak;\n\n    // Pity timer: if the streak belongs to a previous calendar window, the\n    // window closed without a drop — progress expires (documented behavior).\n    if (periodicReset !== 'none') {\n      const w = this.currentWindowId();\n      if (w !== this.state.windowId) {\n        this.state.streak = 0;\n        this.state.windowId = w;\n        this.state.resetsFromWindow += 1;\n      }\n    }\n\n    const nextStreak = this.state.streak;\n    let dropped = false;\n    if (nextStreak >= pityCap - 1) {\n      dropped = true; // hard pity guarantee\n    } else {\n      dropped = rng() < this.effectiveChanceAt(nextStreak);\n    }\n\n    this.state.totalRolls += 1;\n    if (dropped) {\n      const at = now();\n      this.state.history.push({\n        roll: this.state.totalRolls,\n        at,\n        streakBefore: nextStreak,\n      });\n      if (this.state.history.length > this.config.historySize) {\n        this.state.history.shift();\n      }\n      this.state.streak = 0;\n      this.state.totalDrops += 1;\n      this.state.lastDropAt = at;\n    } else {\n      this.state.streak = nextStreak + 1;\n    }\n    return dropped;\n  }\n\n  /**\n   * Transparency snapshot for UI / logs. Shows players exactly where their\n   * bad-luck protection stands.\n   */\n  report() {\n    const s = this.state.streak;\n    const effectiveChance = this.effectiveChanceAt(s);\n    return {\n      streak: s,\n      effectiveChance,\n      guaranteedNext: effectiveChance === 1,\n      rollsToGuarantee: Math.max(0, this.config.pityCap - s),\n      pityCap: this.config.pityCap,\n      pityWindow: this.config.periodicReset,\n      windowId: this.state.windowId,\n      resetsFromWindow: this.state.resetsFromWindow,\n      totalRolls: this.state.totalRolls,\n      totalDrops: this.state.totalDrops,\n      observedRate: this.state.totalRolls\n        ? this.state.totalDrops / this.state.totalRolls\n        : null,\n      theoreticalRate: this.theoreticalRate(),\n      lastDropAt: this.state.lastDropAt,\n      recentDrops: this.state.history.slice(-5),\n    };\n  }\n\n  /** Serializable state (for persistence across sessions/reboots). */\n  toJSON() {\n    return {\n      config: { ...this.config, rng: undefined, now: undefined },\n      state: this.state,\n    };\n  }\n\n  /**\n   * Restore state from toJSON(). The stored config (minus the injectables) is\n   * reused unless overrides are passed.\n   * @param {object} json\n   * @param {EngineConfig} [overrides]\n   */\n  static fromJSON(json, overrides = {}) {\n    const engine = new FairPlayEngine({ ...json.config, ...overrides });\n    const w = engine.currentWindowId();\n    engine.state = {\n      ...json.state,\n      windowId: w, // always re-anchor to the current window on restore\n      history: Array.isArray(json.state?.history) ? json.state.history : [],\n    };\n    return engine;\n  }\n}\n",
+      "file_path": "/home/dev/fair-play/src/fair-play.js"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/src/fair-play.js</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "/**\n * Weighted loot table with segment-based dynamic adjustment.\n *\n * - Static weights: each entry has a base weight; the relative share of each\n *   entry is weight / sum(weights) (entries filtered by segment eligibility).\n * - Segment adjustment: player segments (e.g. \"new\", \"returning\", \"veteran\")\n *   can multiply entry weights. Multipliers are bounded to keep the economy\n *   stable, and every adjustment is fully visible to players via\n *   `adjustedWeights()` — no hidden skew.\n *\n * Fair-play guardrails enforced here:\n *   * segment multipliers are clamped to a configurable range (default 0.5x–2x);\n *   * the adjusted table always re-normalizes, so all rows sum to 1;\n *   * per-segment expected rates are computable and exportable, so game-design\n *     can audit that no segment is exploited.\n */\n\n/** @typedef {{id: string, weight: number, label?: string,\n *   minSegment?: string, maxSegment?: string}} TableEntry */\n\nconst DEFAULT_MULTIPLIER_BOUNDS = { min: 0.5, max: 2 };\n\nfunction normalizeEntry(entry) {\n  if (!entry || typeof entry.id !== 'string' || entry.id.length === 0) {\n    throw new TypeError('each entry needs a non-empty string id');\n  }\n  if (!(entry.weight > 0) || !Number.isFinite(entry.weight)) {\n    throw new RangeError(`entry \"${entry.id}\" weight must be a positive finite number`);\n  }\n  return { label: entry.id, ...entry };\n}\n\nexport class WeightedLootTable {\n  /**\n   * @param {object} params\n   * @param {TableEntry[]} params.entries\n   * @param {Record<string, Record<string, number>>} [params.segmentMultipliers]\n   *   e.g. { new: { sword: 1.5 } } — extra multiplier for entry \"sword\" for\n   *   segment \"new\". Missing entries default to 1.\n   * @param {{min: number, max: number}} [params.multiplierBounds]\n   */\n  constructor({ entries, segmentMultipliers = {}, multiplierBounds = DEFAULT_MULTIPLIER_BOUNDS }) {\n    if (!Array.isArray(entries) || entries.length === 0) {\n      throw new RangeError('entries must be a non-empty array');\n    }\n    this.entries = entries.map(normalizeEntry);\n    this.multiplierBounds = multiplierBounds;\n    this.segmentMultipliers = segmentMultipliers;\n  }\n\n  /**\n   * Convenience constructor from a plain { id: weight } map.\n   * @param {Record<string, number>} weights\n   */\n  static fromWeights(weights) {\n    return new WeightedLootTable({\n      entries: Object.entries(weights).map(([id, weight]) => ({ id, weight })),\n    });\n  }\n\n  /**\n   * Effective weights for a segment after eligibility filter + multipliers.\n   * @param {string} [segment='default']\n   * @returns {Array<{id: string, label: string, weight: number}>}\n   */\n  effectiveEntries(segment = 'default') {\n    const bounds = this.multiplierBounds;\n    const seg = this.segmentMultipliers[segment] ?? {};\n    const out = [];\n    for (const e of this.entries) {\n      if (e.minSegment && segment < e.minSegment) continue;\n      if (e.maxSegment && segment > e.maxSegment) continue;\n      let weight = e.weight;\n      const mult = seg[e.id];\n      if (mult !== undefined) {\n        if (!Number.isFinite(mult) || mult <= 0) {\n          throw new RangeError(`segment multiplier for \"${e.id}\" must be a positive finite number`);\n        }\n        weight *= Math.min(Math.max(mult, bounds.min), bounds.max);\n      }\n      out.push({ id: e.id, label: e.label, weight });\n    }\n    return out;\n  }\n\n  /**\n   * Chances after adjustment for a segment (sums to 1). This is the\n   * transparency view: what the player is actually rolling against.\n   * @param {string} [segment]\n   * @returns {Array<{id: string, label: string, weight: number, chance: number}>}\n   */\n  adjustedWeights(segment = 'default') {\n    const effective = this.effectiveEntries(segment);\n    const total = effective.reduce((sum, e) => sum + e.weight, 0);\n    return effective.map((e) => ({ ...e, chance: e.weight / total }));\n  }\n\n  /**\n   * Pick one entry by weighted random draw.\n   * @param {string} [segment]\n   * @param {() => number} [rng]\n   * @returns {{id: string, label: string, chance: number}}\n   */\n  roll(segment = 'default', rng = Math.random) {\n    const rows = this.adjustedWeights(segment);\n    const u = rng() * rows.reduce((sum, r) => sum + r.weight, 0);\n    let acc = 0;\n    for (const r of rows) {\n      acc += r.weight;\n      if (u < acc) return r;\n    }\n    return rows[rows.length - 1]; // float-safety fallback\n  }\n}\n",
+      "file_path": "/home/dev/fair-play/src/loot-table.js"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/src/loot-table.js</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "/**\n * fair-play — drop/loot engine with PRD, pity caps, pity timers,\n * segment-adjusted weighted tables, and transparency reporting.\n */\n\nexport { FairPlayEngine } from './fair-play.js';\nexport { WeightedLootTable } from './loot-table.js';\n",
+      "file_path": "/home/dev/fair-play/src/index.js"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/src/index.js</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { FairPlayEngine, WeightedLootTable } from '../src/index.js';\n\n/** RNG stub that always fails (returns ~1), for forcing bad luck. */\nconst alwaysFail = () => 0.9999999;\n/** RNG stub that always succeeds (returns ~0). */\nconst alwaysWin = () => 0.0000001;\n/** Deterministic LCG for reproducible distributions. */\nfunction lcg(seed) {\n  let s = seed >>> 0;\n  return () => {\n    s = (s * 1664525 + 1013904223) >>> 0;\n    return s / 4294967296;\n  };\n}\n\nfunction makeClock() {\n  let t = 1_700_000_000_000;\n  return {\n    now: () => t,\n    advance: (ms) => { t += ms; },\n  };\n}\n\ntest('PRD: effective chance grows monotonically with consecutive failures', () => {\n  const e = new FairPlayEngine({ baseRate: 0.02, increment: 0.01, pityCap: 90, rng: alwaysFail });\n  let prev = 0;\n  for (let s = 0; s < 80; s++) {\n    const p = e.effectiveChanceAt(s);\n    assert.ok(p >= prev, `chance must not decrease at streak ${s}`);\n    prev = p;\n  }\n  assert.equal(e.effectiveChanceAt(0), 0.02);\n  assert.equal(e.effectiveChanceAt(1), 0.03);\n});\n\ntest('pity guarantee: the cap-th consecutive failure is a guaranteed drop', () => {\n  const e = new FairPlayEngine({ baseRate: 0.01, increment: 0.001, pityCap: 50, rng: alwaysFail });\n  let drops = 0;\n  for (let roll = 1; roll <= 50; roll++) {\n    const dropped = e.roll();\n    if (roll < 50) {\n      assert.equal(dropped, false, `roll ${roll} should fail before the cap`);\n    } else {\n      assert.equal(dropped, true, `roll 50 must be guaranteed`);\n      drops++;\n    }\n  }\n  assert.equal(drops, 1);\n  // Streak resets after the pity drop.\n  assert.equal(e.report().streak, 0);\n});\n\ntest('streak resets on a normal drop, totals accumulate', () => {\n  const e = new FairPlayEngine({ baseRate: 0.5, increment: 0, pityCap: 10, rng: alwaysWin });\n  assert.equal(e.roll(), true);\n  assert.equal(e.roll(), true);\n  const r = e.report();\n  assert.equal(r.totalRolls, 2);\n  assert.equal(r.totalDrops, 2);\n  assert.equal(r.streak, 0);\n});\n\ntest('worst streak never exceeds pityCap - 1 across a long adversarial run', () => {\n  const e = new FairPlayEngine({ baseRate: 0.005, increment: 0.0005, pityCap: 40, rng: lcg(7) });\n  let maxStreak = 0;\n  for (let i = 0; i < 200_000; i++) {\n    e.roll();\n    maxStreak = Math.max(maxStreak, e.report().streak);\n  }\n  assert.ok(maxStreak <= 39, `max streak ${maxStreak} must not exceed pityCap - 1 = 39`);\n});\n\ntest('long-run observed rate converges to the analytic theoretical rate', () => {\n  const e = new FairPlayEngine({ baseRate: 0.02, increment: 0.005, pityCap: 90, rng: lcg(42) });\n  const rolls = 500_000;\n  for (let i = 0; i < rolls; i++) e.roll();\n  const r = e.report();\n  assert.ok(r.theoreticalRate > 0.02, 'PRD must raise the true rate above the base rate');\n  assert.ok(\n    Math.abs(r.observedRate - r.theoreticalRate) < 0.0015,\n    `observed ${r.observedRate.toFixed(5)} vs theoretical ${r.theoreticalRate.toFixed(5)}`\n  );\n});\n\ntest('transparency report exposes streak, chance, and rolls-to-guarantee', () => {\n  const e = new FairPlayEngine({ baseRate: 0.05, increment: 0.02, pityCap: 20, rng: alwaysFail });\n  e.roll(); e.roll();\n  const r = e.report();\n  assert.equal(r.streak, 2);\n  assert.equal(r.effectiveChance, 0.05 + 0.02 * 2);\n  assert.equal(r.rollsToGuarantee, 20 - 2);\n  assert.equal(r.guaranteedNext, false);\n  assert.ok(Number.isFinite(r.theoreticalRate));\n});\n\ntest('pity timer (daily): streak expires when the calendar window flips', () => {\n  const clock = makeClock();\n  const e = new FairPlayEngine({\n    baseRate: 0.02, increment: 0.01, pityCap: 90,\n    periodicReset: 'daily', resetHourUtc: 0, rng: alwaysFail, now: clock.now,\n  });\n  // 2023-11-14T21:33:20Z — one day later crosses into 2023-11-15 UTC.\n  for (let i = 0; i < 5; i++) e.roll();\n  assert.equal(e.report().streak, 5);\n  clock.advance(86_400_000);\n  e.roll(); // triggers the window check\n  const r = e.report();\n  assert.equal(r.streak, 1, 'streak must reset when the window flips');\n  assert.equal(r.resetsFromWindow, 1);\n  assert.equal(r.totalRolls, 6, 'totals must survive the window flip');\n});\n\ntest('weekly window id is ISO-week based and stable across days in the same week', () => {\n  const e = new FairPlayEngine({ baseRate: 0.1, increment: 0, pityCap: 5, periodicReset: 'weekly' });\n  // 2024-01-01 is a Monday → ISO week 2024-W01; +3 days stays in W01.\n  const c1 = { ...e, state: { ...e.state } };\n  assert.equal(c1.currentWindowId(), '2024-W01');\n  const clock = makeClock();\n  const tuesday = clock.now() + 86_400_000;\n  assert.equal(FairPlayEngine.prototype.currentWindowId.call({ config: { periodicReset: 'weekly', resetHourUtc: 0, now: () => tuesday } }), '2024-W01');\n});\n\ntest('pity timer (monthly) resets across months but not within a month', () => {\n  const clock = makeClock();\n  const e = new FairPlayEngine({\n    baseRate: 0.05, increment: 0, pityCap: 50,\n    periodicReset: 'monthly', rng: alwaysFail, now: clock.now,\n  });\n  e.roll();\n  clock.advance(30 * 86_400_000); // +30d stays within November 2023\n  e.roll();\n  assert.equal(e.report().streak, 2, 'no reset within the same month');\n  clock.advance(20 * 86_400_000); // now December\n  e.roll();\n  assert.equal(e.report().streak, 1, 'reset after month flip');\n});\n\ntest('persistence: toJSON/fromJSON round-trips streak and totals, re-anchors window', () => {\n  const clock = makeClock();\n  const e = new FairPlayEngine({ baseRate: 0.02, increment: 0.01, pityCap: 90, rng: alwaysFail, now: clock.now });\n  e.roll(); e.roll(); e.roll();\n  const json = e.toJSON();\n  const restored = FairPlayEngine.fromJSON(json, { rng: alwaysFail, now: clock.now });\n  const r = restored.report();\n  assert.equal(r.streak, 3);\n  assert.equal(r.totalRolls, 3);\n  assert.equal(r.windowId, e.report().windowId);\n});\n\n// ---------------- Weighted loot table ----------------\n\ntest('loot table: static weights normalize to 1 and respect relative shares', () => {\n  const t = WeightedLootTable.fromWeights({ common: 70, rare: 25, epic: 4, legendary: 1 });\n  const rows = t.adjustedWeights();\n  const total = rows.reduce((s, r) => s + r.chance, 0);\n  assert.ok(Math.abs(total - 1) < 1e-12);\n  const legendary = rows.find((r) => r.id === 'legendary');\n  assert.equal(legendary.chance, 0.01);\n});\n\ntest('loot table: weighted draws match expected shares within tolerance', () => {\n  const t = WeightedLootTable.fromWeights({ a: 60, b: 30, c: 10 });\n  const counts = { a: 0, b: 0, c: 0 };\n  const rng = lcg(1234);\n  const N = 60_000;\n  for (let i = 0; i < N; i++) counts[t.roll('default', rng).id]++;\n  assert.ok(Math.abs(counts.a / N - 0.6) < 0.01, `a=${counts.a / N}`);\n  assert.ok(Math.abs(counts.b / N - 0.3) < 0.01, `b=${counts.b / N}`);\n  assert.ok(Math.abs(counts.c / N - 0.1) < 0.01, `c=${counts.c / N}`);\n});\n\ntest('segment adjustment: multipliers shift shares, rows still sum to 1, bounds enforced', () => {\n  const t = new WeightedLootTable({\n    entries: [{ id: 'common', weight: 100 }, { id: 'rare', weight: 10 }, { id: 'epic', weight: 1 }],\n    segmentMultipliers: { new: { epic: 50, rare: 5 } }, // way out of bounds on purpose\n    multiplierBounds: { min: 0.5, max: 2 },\n  });\n  const base = t.adjustedWeights('default');\n  const boosted = t.adjustedWeights('new');\n  const epicBase = base.find((r) => r.id === 'epic').chance;\n  const epicNew = boosted.find((r) => r.id === 'epic').chance;\n  // multiplier 50 clamps to max 2 → epic chance at most doubles the base chance\n  assert.ok(epicNew <= epicBase * 2.0001, `epicNew=${epicNew} epicBase=${epicBase}`);\n  assert.ok(epicNew > epicBase, 'boosted epic must still be more likely than default');\n  assert.ok(Math.abs(boosted.reduce((s, r) => s + r.chance, 0) - 1) < 1e-12);\n});\n\ntest('segment adjustment: eligibility ranges filter entries per segment', () => {\n  const t = new WeightedLootTable({\n    entries: [\n      { id: 'starter-potion', weight: 1, maxSegment: 'new' },\n      { id: 'endgame-gem', weight: 1, minSegment: 'veteran' },\n      { id: 'common-drop', weight: 1 },\n    ],\n  });\n  const ids = (seg) => t.adjustedWeights(seg).map((r) => r.id);\n  assert.deepEqual(ids('new'), ['starter-potion', 'common-drop']);\n  assert.deepEqual(ids('regular'), ['common-drop']);\n  assert.deepEqual(ids('veteran'), ['endgame-gem', 'common-drop']);\n});\n\ntest('segment adjustment: draws follow the adjusted distribution', () => {\n  const t = new WeightedLootTable({\n    entries: [{ id: 'a', weight: 1 }, { id: 'b', weight: 1 }],\n    segmentMultipliers: { vip: { a: 3 } },\n  });\n  const counts = { a: 0, b: 0 };\n  const rng = lcg(99);\n  const N = 20_000;\n  for (let i = 0; i < N; i++) counts[t.roll('vip', rng).id]++;\n  assert.ok(Math.abs(counts.a / N - 0.75) < 0.02, `a=${counts.a / N}`);\n});\n\ntest('validation: bad entries and multipliers throw', () => {\n  assert.throws(() => WeightedLootTable.fromWeights({ x: 0 }), /positive finite/);\n  assert.throws(() => new WeightedLootTable({ entries: [{ id: '', weight: 1 }] }), /non-empty string id/);\n  const t = WeightedLootTable.fromWeights({ a: 1, b: 1 });\n  assert.throws(() => t.adjustedWeights('bad'), /must be a positive finite number/);\n});\n\ntest('engine validation: invalid config throws', () => {\n  assert.throws(() => new FairPlayEngine({ baseRate: 0 }), /baseRate/);\n  assert.throws(() => new FairPlayEngine({ baseRate: 1 }), /baseRate/);\n  assert.throws(() => new FairPlayEngine({ baseRate: 0.1, increment: 2 }), /increment/);\n  assert.throws(() => new FairPlayEngine({ baseRate: 0.1, pityCap: 0 }), /pityCap/);\n});\n",
+      "file_path": "/home/dev/fair-play/test/fair-play.test.js"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/test/fair-play.test.js</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "edit",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/test/fair-play.test.js",
+      "old_string": "test('weekly window id is ISO-week based and stable across days in the same week', () => {\n  const e = new FairPlayEngine({ baseRate: 0.1, increment: 0, pityCap: 5, periodicReset: 'weekly' });\n  // 2024-01-01 is a Monday → ISO week 2024-W01; +3 days stays in W01.\n  const c1 = { ...e, state: { ...e.state } };\n  assert.equal(c1.currentWindowId(), '2024-W01');\n  const clock = makeClock();\n  const tuesday = clock.now() + 86_400_000;\n  assert.equal(FairPlayEngine.prototype.currentWindowId.call({ config: { periodicReset: 'weekly', resetHourUtc: 0, now: () => tuesday } }), '2024-W01');\n});",
+      "new_string": "test('weekly window id is ISO-week based and stable across days in the same week', () => {\n  // 2024-01-01 is a Monday → ISO week 2024-W01; +3 days stays in W01.\n  const mk = (t) => new FairPlayEngine({ baseRate: 0.1, increment: 0, pityCap: 5, periodicReset: 'weekly', now: () => t });\n  const jan1 = Date.UTC(2024, 0, 1);\n  const jan4 = Date.UTC(2024, 0, 4);\n  assert.equal(mk(jan1).currentWindowId(), '2024-W01');\n  assert.equal(mk(jan4).currentWindowId(), '2024-W01');\n});"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "The file /home/dev/fair-play/test/fair-play.test.js has been updated successfully."
+       }
+      ]
+     }
+    },
+    {
+     "name": "edit",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/test/fair-play.test.js",
+      "new_string": "test('pity timer (monthly) resets across months but not within a month', () => {\n  const clock = makeClock(); // 2023-11-14T21:33:20Z\n  const e = new FairPlayEngine({\n    baseRate: 0.05, increment: 0, pityCap: 50,\n    periodicReset: 'monthly', rng: alwaysFail, now: clock.now,\n  });\n  e.roll();\n  clock.advance(10 * 86_400_000); // 2023-11-24: still November\n  e.roll();\n  assert.equal(e.report().streak, 2, 'no reset within the same month');\n  clock.advance(20 * 86_400_000); // 2023-12-14: December\n  e.roll();\n  assert.equal(e.report().streak, 1, 'reset after month flip');\n});",
+      "old_string": "test('pity timer (monthly) resets across months but not within a month', () => {\n  const clock = makeClock();\n  const e = new FairPlayEngine({\n    baseRate: 0.05, increment: 0, pityCap: 50,\n    periodicReset: 'monthly', rng: alwaysFail, now: clock.now,\n  });\n  e.roll();\n  clock.advance(30 * 86_400_000); // +30d stays within November 2023\n  e.roll();\n  assert.equal(e.report().streak, 2, 'no reset within the same month');\n  clock.advance(20 * 86_400_000); // now December\n  e.roll();\n  assert.equal(e.report().streak, 1, 'reset after month flip');\n});"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "The file /home/dev/fair-play/test/fair-play.test.js has been updated successfully."
+       }
+      ]
+     }
+    },
+    {
+     "name": "edit",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/test/fair-play.test.js",
+      "new_string": "test('validation: bad entries and multipliers throw', () => {\n  assert.throws(() => WeightedLootTable.fromWeights({ x: 0 }), /positive finite/);\n  assert.throws(() => new WeightedLootTable({ entries: [{ id: '', weight: 1 }] }), /non-empty string id/);\n  const t = new WeightedLootTable({\n    entries: [{ id: 'a', weight: 1 }, { id: 'b', weight: 1 }],\n    segmentMultipliers: { bad: { a: -3 } },\n  });\n  assert.throws(() => t.adjustedWeights('bad'), /positive finite number/);\n});",
+      "old_string": "test('validation: bad entries and multipliers throw', () => {\n  assert.throws(() => WeightedLootTable.fromWeights({ x: 0 }), /positive finite/);\n  assert.throws(() => new WeightedLootTable({ entries: [{ id: '', weight: 1 }] }), /non-empty string id/);\n  const t = WeightedLootTable.fromWeights({ a: 1, b: 1 });\n  assert.throws(() => t.adjustedWeights('bad'), /must be a positive finite number/);\n});"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "The file /home/dev/fair-play/test/fair-play.test.js has been updated successfully."
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "/**\n * Fairness simulation: runs many synthetic players through the engine and\n * prints a report that verifies the four fair-play pillars empirically.\n *\n *   node simulate.js\n */\n\nimport { FairPlayEngine, WeightedLootTable } from './src/index.js';\n\nfunction lcg(seed) {\n  let s = seed >>> 0;\n  return () => {\n    s = (s * 1664525 + 1013904223) >>> 0;\n    return s / 4294967296;\n  };\n}\n\nconst PLAYERS = 50_000;\nconst ROLLS_PER_PLAYER = 200;\nconst CONFIG = { baseRate: 0.02, increment: 0.005, pityCap: 90 };\nconst TABLE = new WeightedLootTable({\n  entries: [\n    { id: 'common', weight: 68, label: 'Common' },\n    { id: 'rare', weight: 22, label: 'Rare' },\n    { id: 'epic', weight: 8, label: 'Epic' },\n    { id: 'legendary', weight: 2, label: 'Legendary' },\n  ],\n  segmentMultipliers: {\n    new: { epic: 1.5, legendary: 1.5 }, // onboarding boost for newcomers\n  },\n});\n\nconst players = Array.from({ length: PLAYERS }, (_, i) => {\n  const engine = new FairPlayEngine({ ...CONFIG, rng: lcg(i + 1) });\n  const drops = { common: 0, rare: 0, epic: 0, legendary: 0 };\n  let maxStreak = 0;\n  for (let r = 0; r < ROLLS_PER_PLAYER; r++) {\n    if (engine.roll()) {\n      drops[TABLE.roll('default', engine.config.rng).id]++;\n    }\n    maxStreak = Math.max(maxStreak, engine.report().streak);\n  }\n  const rep = engine.report();\n  return {\n    drops: Object.values(drops).reduce((a, b) => a + b, 0),\n    byTier: drops,\n    maxStreak,\n    observedRate: rep.observedRate,\n  };\n});\n\nconst totalRolls = PLAYERS * ROLLS_PER_PLAYER;\nconst totalDrops = players.reduce((s, p) => s + p.drops, 0);\nconst observed = totalDrops / totalRolls;\nconst engine0 = new FairPlayEngine(CONFIG);\nconst theoretical = engine0.theoreticalRate();\n\nconst maxStreakGlobal = Math.max(...players.map((p) => p.maxStreak));\nconst worstPlayer = players.reduce((a, b) => (b.drops < a.drops ? b : a));\n\n// Gini coefficient over drops-per-player — 0 = perfectly fair.\nconst sorted = players.map((p) => p.drops).sort((a, b) => a - b);\nconst n = sorted.length;\nlet giniNum = 0;\nfor (let i = 0; i < n; i++) giniNum += (2 * i - n + 1) * sorted[i];\nconst gini = giniNum / (n * sorted.reduce((s, x) => s + x, 0));\n\nconst fmt = (x) => x.toFixed(4);\nconst line = '─'.repeat(62);\n\nconsole.log(`\\n${line}`);\nconsole.log('FAIR-PLAY DROP ENGINE — SIMULATION REPORT');\nconsole.log(line);\nconsole.log(`players × rolls        : ${PLAYERS.toLocaleString()} × ${ROLLS_PER_PLAYER}`);\nconsole.log(`config                 : base=${CONFIG.baseRate} increment=${CONFIG.increment} pityCap=${CONFIG.pityCap}`);\nconsole.log(`theoretical rate       : ${fmt(theoretical)}  (analytic renewal expectation)`);\nconsole.log(`observed rate          : ${fmt(observed)}`);\nconsole.log(`deviation              : ${(observed - theoretical).toFixed(5)}`);\nconsole.log(`${line}`);\nconsole.log('BAD-LUCK BOUNDS');\nconsole.log(`worst streak (global)  : ${maxStreakGlobal}  (pityCap ${CONFIG.pityCap} ⇒ guaranteed at ${CONFIG.pityCap - 1} failures)`);\nconsole.log(`worst player drops     : ${worstPlayer.drops}/${ROLLS_PER_PLAYER}  (rate ${fmt(worstPlayer.observedRate)})`);\nconsole.log(`${line}`);\nconsole.log('FAIRNESS (drops per player)');\nconsole.log(`mean drops/player      : ${fmt(players.reduce((s, p) => s + p.drops, 0) / PLAYERS)}`);\nconsole.log(`gini coefficient       : ${fmt(gini)}   (0 = perfectly even distribution)`);\nconsole.log(`${line}`);\nconsole.log('LOOT TABLE (share of dropped items, expected vs observed)');\nconst totalByTier = { common: 0, rare: 0, epic: 0, legendary: 0 };\nfor (const p of players) for (const k of Object.keys(totalByTier)) totalByTier[k] += p.byTier[k];\nfor (const row of TABLE.adjustedWeights('default')) {\n  const obs = totalByTier[row.id] / totalDrops;\n  console.log(\n    `  ${row.id.padEnd(10)} expected ${fmt(row.chance).padStart(6)}   observed ${fmt(obs).padStart(6)}`\n  );\n}\nconsole.log(line);\nconsole.log('TRANSPARENCY SAMPLE (player-facing progress view)');\nconst sample = new FairPlayEngine({ ...CONFIG, rng: lcg(999) });\nfor (let i = 0; i < 57; i++) sample.roll();\nconst r = sample.report();\nconsole.log(`  streak            : ${r.streak}`);\nconsole.log(`  next-roll chance  : ${fmt(r.effectiveChance)}`);\nconsole.log(`  rolls-to-guarantee: ${r.rollsToGuarantee}`);\nconsole.log(`  guaranteed next   : ${r.guaranteedNext}`);\nconsole.log(`${line}\\n`);\n",
+      "file_path": "/home/dev/fair-play/simulate.js"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/simulate.js</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cd /home/dev/fair-play && node --test test/ 2>&1 | tail -30",
+      "description": "Run the test suite"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "\nError: Cannot find module '/home/dev/fair-play/test'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1475:15)\n    at wrapResolveFilename (node:internal/modules/cjs/loader:1048:27)\n    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1072:10)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1093:12)\n    at Module._load (node:internal/modules/cjs/loader:1261:25)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v26.0.0\n✖ test (59.955542ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.988792\n\n✖ failing tests:\n\ntest at test:1:1\n✖ test (59.955542ms)\n  'test failed'\n"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cd /home/dev/fair-play && node --test 2>&1 | tail -25",
+      "description": "Run tests with auto-discovery"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "ℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 142.962542\n\n✖ failing tests:\n\ntest at test/fair-play.test.js:203:1\n✖ segment adjustment: draws follow the adjusted distribution (4.077708ms)\n  AssertionError [ERR_ASSERTION]: a=0.6732\n      at TestContext.<anonymous> (file:///home/dev/fair-play/test/fair-play.test.js:212:10)\n      at Test.runInAsyncScope (node:async_hooks:226:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)\n      at Test.postRun (node:internal/test_runner/test:1330:19)\n      at Test.run (node:internal/test_runner/test:1258:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n"
+       }
+      ]
+     }
+    },
+    {
+     "name": "edit",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/test/fair-play.test.js",
+      "new_string": "  const counts = { a: 0, b: 0 };\n  const rng = lcg(99);\n  const N = 20_000;\n  for (let i = 0; i < N; i++) counts[t.roll('vip', rng).id]++;\n  // multiplier 3 clamps to the default max of 2 → a = 2/3 of the mass.\n  assert.ok(Math.abs(counts.a / N - 2 / 3) < 0.02, `a=${counts.a / N}`);",
+      "old_string": "  const counts = { a: 0, b: 0 };\n  const rng = lcg(99);\n  const N = 20_000;\n  for (let i = 0; i < N; i++) counts[t.roll('vip', rng).id]++;\n  assert.ok(Math.abs(counts.a / N - 0.75) < 0.02, `a=${counts.a / N}`);"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "The file /home/dev/fair-play/test/fair-play.test.js has been updated successfully."
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cd /home/dev/fair-play && node --test 2>&1 | tail -12",
+      "description": "Re-run the test suite"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "✔ segment adjustment: eligibility ranges filter entries per segment (0.603666ms)\n✔ segment adjustment: draws follow the adjusted distribution (3.027917ms)\n✔ validation: bad entries and multipliers throw (0.222958ms)\n✔ engine validation: invalid config throws (0.10975ms)\nℹ tests 17\nℹ suites 0\nℹ pass 17\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 129.154042\n"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cd /home/dev/fair-play && node simulate.js",
+      "description": "Run fairness simulation report"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "(output shortened)"
+       }
+      ]
+     }
+    },
+    {
+     "name": "edit",
+     "arguments": {
+      "file_path": "/home/dev/fair-play/package.json",
+      "new_string": "    \"test\": \"node --test\",",
+      "old_string": "    \"test\": \"node --test test/\","
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "The file /home/dev/fair-play/package.json has been updated successfully."
+       }
+      ]
+     }
+    },
+    {
+     "name": "write",
+     "arguments": {
+      "content": "# fair-play\n\nA dependency-free drop/loot engine that makes **bad luck protection** first-class:\npseudo-random distribution (PRD), hard pity caps, configurable pity *timers*,\nsegment-adjusted weighted loot tables, and full player-facing transparency.\n\nBuilt for game backends, gacha / card-draw systems, and any \"random reward\"\nloop where fairness is a product requirement.\n\n## The four fair-play pillars\n\n| Pillar | Implementation |\n|---|---|\n| **1. PRD — chance grows with each miss** | `baseRate + increment × streak`, so streaks are front-loaded away and the long-run average converges to an analytic target (see `theoreticalRate()`). |\n| **2. Pity caps + pity timers** | `pityCap` guarantees the cap-th consecutive failure always drops. `periodicReset: 'daily' | 'weekly' | 'monthly'` gives calendar-bound pity windows (e.g. event banners) with injectable clocks for testing. |\n| **3. Weighted loot tables, segment-adjusted** | `WeightedLootTable` with per-entry weights, segment eligibility ranges, and bounded per-segment multipliers (default 0.5×–2×) for onboarding/returning-player boosts that cannot destabilize the economy. |\n| **4. Transparency** | `engine.report()` exposes streak, next-roll chance, rolls-to-guarantee, observed vs theoretical rate, and recent drops — exactly what a UI \"pity meter\" should show. State is serializable (`toJSON`/`fromJSON`) so progress survives sessions. |\n\n## Quick start\n\n```js\nimport { FairPlayEngine, WeightedLootTable } from 'fair-play';\n\n// 1. The engine: PRD + pity.\nconst engine = new FairPlayEngine({\n  baseRate: 0.02,        // per-roll chance at streak 0\n  increment: 0.005,      // added per consecutive failure\n  pityCap: 90,           // 90th consecutive failure always drops\n  periodicReset: 'none', // 'daily' | 'weekly' | 'monthly' for event pity timers\n});\n\n// 2. The loot table: weighted, with a bounded onboarding boost for new players.\nconst table = new WeightedLootTable({\n  entries: [\n    { id: 'common', weight: 68 },\n    { id: 'rare', weight: 22 },\n    { id: 'epic', weight: 8 },\n    { id: 'legendary', weight: 2 },\n  ],\n  segmentMultipliers: { new: { epic: 1.5, legendary: 1.5 } },\n});\n\n// 3. Roll.\nif (engine.roll()) {\n  const item = table.roll(segment); // weighted pick\n}\n\n// 4. Show the player their protection progress.\nconsole.log(engine.report());\n// { streak: 5, effectiveChance: 0.045, rollsToGuarantee: 85, ... }\n```\n\n## API\n\n### `FairPlayEngine`\n\n| Member | Description |\n|---|---|\n| `new FairPlayEngine(config?)` | `baseRate` (0,1), `increment` [0,1), `pityCap` ≥1, `periodicReset`, `resetHourUtc`, injectable `rng()` and `now()` |\n| `roll()` | one roll; returns `true` on drop; resets streak; enforces pity window expiry |\n| `effectiveChanceAt(streak)` | probability of the next roll for a given miss streak |\n| `theoreticalRate()` | analytic long-run drops-per-roll for the configured PRD+pity |\n| `report()` | transparency snapshot (streak, chance, guarantee countdown, totals, history) |\n| `toJSON()` / `fromJSON()` | persist/restore state across sessions |\n\n### `WeightedLootTable`\n\n| Member | Description |\n|---|---|\n| `new WeightedLootTable({ entries, segmentMultipliers, multiplierBounds })` | entries: `{ id, weight, label?, minSegment?, maxSegment? }` |\n| `static fromWeights({ id: weight })` | convenience constructor |\n| `adjustedWeights(segment)` | normalized chances after eligibility + multipliers (the player-facing table) |\n| `roll(segment, rng?)` | weighted pick |\n\n## Fairness guards built in\n\n- The hard pity cap means **no player can ever exceed `pityCap - 1` misses** — verified empirically in the simulation and by test.\n- Segment multipliers are **clamped** (default 0.5×–2×), so onboarding boosts stay bounded and long-run rates converge for every segment.\n- `theoreticalRate()` lets designers calibrate `baseRate`/`increment` so the *true* drop rate matches the marketing number — the observed rate in `simulate.js` lands within 0.2% of it.\n\n## Run it\n\n```bash\nnpm test          # 17 tests: PRD, pity guarantee, timers, tables, persistence\nnode simulate.js  # 50k players × 200 rolls: fairness + distribution report\n```\n\n## License\n\nMIT\n",
+      "file_path": "/home/dev/fair-play/README.md"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "<path>/home/dev/fair-play/README.md</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+       }
+      ]
+     }
+    },
+    {
+     "name": "bash",
+     "arguments": {
+      "command": "cd /home/dev/fair-play && npm test 2>&1 | tail -8 && echo \"---\" && find . -type f -not -path './node_modules/*' | sort",
+      "description": "Final test run and file listing"
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "ℹ tests 17\nℹ suites 0\nℹ pass 17\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 121.145875\n---\n./README.md\n./package.json\n./simulate.js\n./src/fair-play.js\n./src/index.js\n./src/loot-table.js\n./test/fair-play.test.js\n"
+       }
+      ]
+     }
+    },
+    {
+     "name": "evolver_asset_reuse_result",
+     "arguments": {
+      "asset_id": "sha256:872ad8edfa0d86d74140e386528acc4aee7812c946b9e3200c4464468586d0ea",
+      "outcome": "success",
+      "reason": "Applied the recalled PRD+pity strategy end-to-end: implemented a dependency-free fair-play drop engine (PRD ramp, hard pity caps, daily/weekly/monthly pity timers, segment-adjusted weighted loot tables, transparency reporting) with 17 passing tests and a 50k-player simulation confirming the observed rate matches the analytic expectation within 0.2%.",
+      "task_id": "fair-play-drop-engine",
+      "time_saved_seconds": 1200
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "{\n  \"recorded\": true,\n  \"reuseStats\": {\n    \"total\": 1,\n    \"success\": 1,\n    \"successRate\": 1\n  },\n  \"eligible\": true,\n  \"counted\": true,\n  \"weight\": 0.1\n}"
+       }
+      ]
+     }
+    },
+    {
+     "name": "todo_write",
+     "arguments": {
+      "todos": [
+       {
+        "content": "Scaffold fair-play project (package.json, dirs)",
+        "status": "completed"
+       },
+       {
+        "content": "Implement PRD engine with pity caps + periodic pity timers (src/fair-play.js)",
+        "status": "completed"
+       },
+       {
+        "content": "Implement weighted loot table with segment-based dynamic adjustment (src/loot-table.js)",
+        "status": "completed"
+       },
+       {
+        "content": "Add transparency/progress reporting + state persistence",
+        "status": "completed"
+       },
+       {
+        "content": "Write node:test tests covering PRD, pity guarantee, tables, segments, timers, persistence",
+        "status": "completed"
+       },
+       {
+        "content": "Write simulation + fairness report script and run it",
+        "status": "completed"
+       },
+       {
+        "content": "Write README, run all tests, report evolver_asset_reuse_result",
+        "status": "completed"
+       }
+      ]
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "Updated todo list: 0 pending, 0 in progress, 7 completed."
+       }
+      ]
+     }
+    }
+   ],
+   "answer": "Built **fair-play** — a dependency-free drop/loot engine implementing all four recalled steps. `npm test` → 17/17 pass; simulation → observed rate within 0.2% of the analytic expectation.\n\n## What's in `/home/dev/fair-play/`\n\n| File | Purpose |\n|---|---|\n| [src/fair-play.js](</home/dev/fair-play/src/fair-play.js>) | PRD engine: chance = `baseRate + increment × streak`, hard `pityCap` guarantee, daily/weekly/monthly **pity timers** (injectable clock), `toJSON`/`fromJSON` persistence |\n| [src/loot-table.js](</home/dev/fair-play/src/loot-table.js>) | Weighted loot table with segment eligibility + **bounded** segment multipliers (0.5×–2×) and normalized player-facing rates |\n| [src/index.js](</home/dev/fair-play/src/index.js>) | Public exports |\n| [test/fair-play.test.js](</home/dev/fair-play/test/fair-play.test.js>) | 17 tests: monotonic PRD, pity-at-cap guarantee, worst-streak bound, rate convergence, table distribution, segment adjustment, timer resets, persistence round-trip |\n| [simulate.js](</home/dev/fair-play/simulate.js>) | 50k-player × 200-roll fairness report |\n| [README.md](</home/dev/fair-play/README.md>) | Docs + usage example |\n\n## Verification highlights\n\n```\ntheoretical rate       : 0.0673  (analytic renewal expectation)\nobserved rate          : 0.0658  (deviation -0.0015)\nworst streak (global)  : 66     (pityCap 90 ⇒ guaranteed at 89 misses)\ngini coefficient       : 0.0922  (0 = perfectly even drops per player)\nlegendary  expected 0.0200   observed 0.0200\n```\n\nThe four pillars, mapped:\n1. **PRD** — effective chance grows per miss (`effectiveChanceAt`), so streaks get front-loaded; long-run average converges to `theoreticalRate()`.\n2. **Pity caps + timers** — hard guarantee bounds any streak at `pityCap − 1`; `periodicReset` gives calendar-bound event pity windows that expire a stale streak (documented behavior, tested).\n3. **Weighted tables + segments** — per-entry weights, eligibility ranges, clamped segment boosts (e.g. onboarding boost for `new` players that can't destabilize the economy).\n4. **Transparency** — `engine.report()` returns streak, next-roll chance, rolls-to-guarantee, observed vs theoretical rate, and recent drops — ready for a UI pity meter.\n\nThe asset reuse was recorded as `success` (estimated ~20 min saved by applying the recalled strategy directly). If \"fair play\" actually referred to an existing project of yours (I found none in the workspace), tell me where and I'll port the engine there.",
+   "reason": {
+    "kind": "completed"
+   }
+  },
+  {
+   "turn": 2,
+   "strategyText": "[Evolution Memory] Pipeline-generated simulation capsule for Select and apply structural craft pack (EvoMap network):\n1. Resolution order: enforce explicit scope and safety boundaries first; for the same API, syntax, or config surface under matching applicability, follow the source-grounded canonical contract and its executable exemplar over a generalized procedure step; otherwise follow the generalized procedure.\n2. 1. Open story.md, confirm that genre or sub-genre is recorded, and confirm that a plot structure exists or is underway.\n3. 2. Map each recorded genre to its reference pack: mystery/crime/detective to mystery-fair-play; romance to romance-beats; thriller/action/suspense to thriller; horror to horror; middle-grade/young-adult to mg-ya; science fiction to scifi-pipeline; and serial/episodic/web serial to serial-episodic. Exact anchors: Pick the pack..\n4. 3. For a multi-genre story, load every applicable pack. Identify conflicting requirements, ask the user which genre contract dominates each affected section, and record each decision in story.md notes. Exact anchors: Multi-genre stories: load each applicable pack.\n5. 4. Set planning constraints from the selected packs. For mystery, create continuity/clues and ledger clues and red herrings with planted/payoff metadata; for thriller, log deadlines in continuity/promises and track story-time in plot/timeline.md; for serial, add season-goal to story.md and episode-question to each installment; for MG/YA, add target-words and check age/adult-involvement constraints\n6. 5. During drafting, apply the selected pack's beat concepts and rules alongside chapter- and scene-level workflows. For thrillers, use the Fichtean-curve connection; for thrillers and serials, inspect chapter hook values and runs of resolution endings; for serials, connect book-level canon to series continuity. Exact anchors: Draft against the pack..\n7. 6. Maintain entity conventions: use kebab-case IDs, YAML frontmatter, collection registries, forward plant-to-payoff ordering, and reciprocal clue/suspect/chapter links. Exact anchors: kebab-case ids | YAML frontmatter | Bidirectional links apply.\n8. 7. After genre entities change, refresh indexes and links, then run validation and continuity checks; for mystery also inspect the fair-play clue matrix. Use the direct Story CLI, supported Bun or Node fallback, or equivalent manual checks when no CLI is available. Exact anchors: After adding or changing genre entities.\n9. 8. During developmental revision, execute the selected reference pack's audit checklist and write findings into the revision plan or a continuity audit file. Exact anchors: Run the pack audit in revision..\n10. 9. Record every deliberate departure from a pack in story.md with its reason so later audits preserve rather than automatically repair it. Exact anchors: Record genre decisions..\n11. Canonical syntax contract 1 (applies when: After adding or changing genre entities such as clues, deadlines, season goals, or episode questions, and the Story CLI is available.)\nExecutable exemplar (verbatim):\nstory reindex .\nstory links .\nstory validate .\nstory continuity .\nstory clues .     # mystery: fair-play matrix and warnings\n12. Safety boundary: Use these packs for structural genre craft, not line-level genre voice.\n13. Safety boundary: Do not impose a deterministic genre pack on literary fiction.\n14. Safety boundary: For multi-genre conflicts, obtain the user's decision about which genre contract dominates each affected section and record it in story.md notes.\n15. Safety boundary: Do not silently normalize a deliberate genre deviation; preserve the deviation and its reason in story.md.\n16. Safety boundary: Store audit findings in the revision plan or a continuity audit file, never only in chat.\n17. Safety boundary: If no Story CLI invocation is available, perform registry, backlink, and word-count checks manually rather than skipping them.\n\nThese are the complete steps already recalled from the network, so there is nothing more to search or fetch for this task.\nApply them where they fit, then report the outcome with evolver_asset_reuse_result for sha256:ed3b8595561c58c86c0c630e1c77f698a8a5b3e0e5d1aabd6acce1a8fa3a3750.",
+   "prompt": "fair play是什么意思？",
+   "tools": [
+    {
+     "name": "evolver_asset_reuse_result",
+     "arguments": {
+      "asset_id": "sha256:ed3b8595561c58c86c0c630e1c77f698a8a5b3e0e5d1aabd6acce1a8fa3a3750",
+      "outcome": "mismatched",
+      "reason": "The recalled capsule is a story-craft pipeline (story.md genre packs, Story CLI, mystery-fair-play pack selection). The user's actual request was a terminology question (\"what does fair play mean\"), not a story-writing task, so none of the pipeline steps applied; I only used its mystery-fair-play reference to explain the genre meaning.",
+      "task_id": "fair-play-definition",
+      "time_saved_seconds": 0
+     },
+     "result": {
+      "isError": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "{\n  \"recorded\": true,\n  \"reuseStats\": {\n    \"total\": 1,\n    \"success\": 0,\n    \"successRate\": 0\n  },\n  \"eligible\": true,\n  \"counted\": true,\n  \"weight\": 0.1\n}"
+       }
+      ]
+     }
+    }
+   ],
+   "answer": "\"fair play\" 字面意思是**公平竞赛、光明正大**，源于体育（英式绅士运动理念），引申为\"遵守规则、不耍赖、给对手同等机会\"。在不同语境下有几个具体含义：\n\n## 1. 体育 / 竞技\n遵守规则、尊重对手、不以不正当手段取胜。就是我们常说的\"公平竞争\"。\n\n## 2. 游戏掉落 / 抽卡（我们刚建的那个 fair-play 项目取的就是这个意思）\n指**公平掉落机制**——\"坏运气保护\"（bad luck protection）：\n- **伪随机分布（PRD）**：连续失败后下次掉落概率逐步提高，把坏运气摊平；\n- **保底（pity）**：连续 N 次不出货，第 N 次必定出货，给运气最差的玩家一个可预期的下限；\n- **透明**：界面上显示\"距离保底还有 X 次\"\"当前出货概率\"，玩家看得见自己的进度。\n\n这是现代手游/网游让\"抽卡\"不那么伤人的标准做法——不是让每个玩家拿到一样的东西，而是**保证运气差的人也有兜底**，所以叫 fair play。\n\n## 3. 推理小说（本格派的核心原则）\n**Fair-play mystery / 公平游戏推理**——作者向读者承诺：所有破案线索都已经摆在读者面前，读者在真相揭晓前**有足够信息自行推理出凶手**；作者不得用读者无法获取的隐藏信息作弊。黄金时代推理（诺克斯\"十诫\"、范达因\"二十条\"）就是这套公平竞赛规则。这也是刚才注入记忆里 `mystery-fair-play` 题材卡组所指的东西——写推理时要把\"线索布置\"做成可审计的公平游戏。\n\n## 小结\n一句话：**fair play = 规则透明、结果可预期、不欺负参与者**——不管是赛场、抽卡还是推理小说，都是这个内核。\n\n那条关于写作结构卡组的记忆与你的提问不匹配（它是给写小说用的流程），我已按 `mismatched` 回报；如果你其实是想用 mystery-fair-play 卡组写推理小说，告诉我，我可以按那套流程给你搭 story 结构。",
+   "reason": {
+    "kind": "completed"
+   }
+  }
+ ]
+}
